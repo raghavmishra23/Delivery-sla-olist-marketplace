@@ -205,8 +205,9 @@ readable without a Kaggle account, and they inherit the same licence terms.
 | Document | For |
 |---|---|
 | [`docs/project-overview.md`](docs/project-overview.md) | The full technical picture — problem, data, method, every definition, findings with evidence |
-| [`docs/overview-simple.md`](docs/overview-simple.md) | The same project in plain language, as questions and answers |
-| [`docs/step-by-step-flow.md`](docs/step-by-step-flow.md) | What was actually done, in order, with the reasoning at each step |
+| [`docs/architecture.md`](docs/architecture.md) | How the pipeline fits together, component by component, and why it is reproducible |
+| [`docs/dataset.md`](docs/dataset.md) | What arrived from Kaggle, every cleaning decision, and the column-level contract |
+| [`docs/interfaces.md`](docs/interfaces.md) | The Kaggle API, the script interfaces and the data contracts between tools |
 | [`reports/business_findings.md`](reports/business_findings.md) | The analysis itself, with the source file behind every number |
 | [`reports/data_quality_report.md`](reports/data_quality_report.md) | Every defect found, what was done about it and why |
 | [`reports/reconciliation.md`](reports/reconciliation.md) | The cross-tool KPI agreement check |

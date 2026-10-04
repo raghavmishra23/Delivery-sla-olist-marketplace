@@ -2,7 +2,7 @@
 
 What arrived from Kaggle, what shape it is in now, and every decision taken in between. The pipeline
 that performs those steps is described in [`architecture.md`](architecture.md); the queries that read
-the result are in [`sql-reference.md`](sql-reference.md). Rule-by-rule counts are also written by the
+the result carry their denominators in their own file headers under `sql/`. Rule-by-rule counts are written by the
 cleaning script itself to [`../reports/data_quality_report.md`](../reports/data_quality_report.md),
 and the per-order audit trail is `data/processed/dq_issue_log.csv`.
 

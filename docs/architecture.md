@@ -2,9 +2,9 @@
 
 How the pipeline is put together, what each component is responsible for, and the properties that make
 the whole thing re-runnable and checkable. For what the data contains see
-[`dataset.md`](dataset.md); for the queries see [`sql-reference.md`](sql-reference.md); for the
-module, script and payload contracts see [`interfaces.md`](interfaces.md). The project in narrative
-order is [`step-by-step-flow.md`](step-by-step-flow.md).
+[`dataset.md`](dataset.md); for the module, script and payload contracts see
+[`interfaces.md`](interfaces.md). The queries themselves are documented in their own file headers
+under `sql/`.
 
 ---
 

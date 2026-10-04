@@ -5,9 +5,9 @@ it asks it of, how the pipeline is put together, every definition the numbers de
 with the evidence behind them, and what the analysis cannot support.
 
 For the pipeline's internals see [`architecture.md`](architecture.md); for the column-level data contract
-see [`dataset.md`](dataset.md); for the queries see [`sql-reference.md`](sql-reference.md). The narrative
-of how the project was built, in order, is [`step-by-step-flow.md`](step-by-step-flow.md). A
-non-technical version of this document is [`overview-simple.md`](overview-simple.md).
+see [`dataset.md`](dataset.md); for the module, script and payload contracts see
+[`interfaces.md`](interfaces.md). Each query states its purpose and denominators in its own header
+under `sql/`.
 
 ---
 
