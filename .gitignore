@@ -1,9 +1,21 @@
 __pycache__/
 *.pyc
-database/pharmacy.db
+database/olist.db
 ~$*.xlsx
 .vscode/
 *.pbix
 .env
 .env.*
+!.env.example
 kaggle.json
+data/external/
+
+# Mechanical copies of data/external, rebuilt by database/clean_data.py
+data/processed/orders.csv
+data/processed/order_items.csv
+data/processed/order_payments.csv
+data/processed/order_reviews.csv
+data/processed/customers.csv
+data/processed/sellers.csv
+data/processed/products.csv
+data/processed/geolocation.csv

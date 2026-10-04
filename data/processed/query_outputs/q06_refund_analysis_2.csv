@@ -1,6 +1,0 @@
-Delivery_Outcome,Orders,Refunded_Orders,Refund_Incidence_Pct,Refund_Inr,Share_Of_Refund_Inr_Pct,Avg_Refund_Per_Refunded_Inr
-Delivered late,460,90,19.5700,53827.1200,46.3500,598.0800
-Delivered on time,2280,63,2.7600,50275.5700,43.2900,798.0200
-Returned (never delivered),15,15,100.0000,12031.5900,10.3600,802.1100
-"Delivered, duration unusable (DQ-05/DQ-10)",16,0,0.0000,0.0000,0.0000,
-In transit,19,0,0.0000,0.0000,0.0000,

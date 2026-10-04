@@ -1,30 +1,17 @@
-"""Runs every sql/NN_*.sql file against pharmacy.db and exports each result set to data/processed/query_outputs/.
+"""Runs every sql/NN_*.sql file against olist.db and exports each result set to data/processed/query_outputs/.
 
 A file may hold several statements. All of them run in order; the ones that return rows are exported as
-qNN_<name>.csv, with _2, _3 suffixes when a single file returns more than one result set. Once every file
-has run, the fact_orders mart built by 07_business_summary.sql is exported to data/processed/fact_orders.csv.
+qNN_<name>.csv, with _2, _3 suffixes when a single file returns more than one result set. Once a run has
+populated fact_orders, the table is also exported whole to data/processed/fact_orders.csv.
 """
 
 import sqlite3
 
 import pandas as pd
 
-from common import DATA_PROCESSED, DB_PATH, QUERY_OUTPUTS, SQL_DIR, connect, log, read_text, write_csv
+from common import DATA_PROCESSED, DB_PATH, QUERY_OUTPUTS, SQL_DIR, connect, log, read_text
 
-# Column contract for data/processed/fact_orders.csv. The Excel workbook, the DAX measures and the
-# dashboard all read this file, so the names and their order are fixed here and must not drift.
-FACT_COLUMNS = [
-    "Order_ID", "Customer_ID", "Order_Date", "Order_Month", "Customer_City", "City_Tier",
-    "Medicine_Category", "Is_Prescription_Required", "Order_Value", "Shipping_Fee", "Order_Status",
-    "Prescription_Status", "Verification_Minutes", "Verification_Bucket", "Delivery_Partner",
-    "Promised_Delivery_Hours", "Actual_Delivery_Hours", "Delivery_Status", "Refund_Flag",
-    "Refund_Amount", "Is_Delivered", "Is_Sla_Eligible", "Is_On_Time", "Is_Late", "Delay_Hours",
-]
-
-# Written as integers rather than %.2f floats; Is_On_Time and Is_Late are NULL off the SLA denominator.
-FACT_FLAGS = [
-    "Is_Prescription_Required", "Refund_Flag", "Is_Delivered", "Is_Sla_Eligible", "Is_On_Time", "Is_Late",
-]
+FACT_EXPORT = DATA_PROCESSED / "fact_orders.csv"
 
 
 def statements(text):
@@ -39,6 +26,10 @@ def statements(text):
         raise ValueError(f"unterminated statement: {tail[0][:60]}")
 
 
+def export(frame, path):
+    frame.to_csv(path, index=False, float_format="%.4f", lineterminator="\n")
+
+
 def run_file(con, path):
     stem = path.stem
     out_name = f"q{stem}" if stem[:2].isdigit() else stem
@@ -50,21 +41,18 @@ def run_file(con, path):
         frame = pd.DataFrame(cur.fetchall(), columns=[c[0] for c in cur.description])
         suffix = "" if not exported else f"_{len(exported) + 1}"
         target = QUERY_OUTPUTS / f"{out_name}{suffix}.csv"
-        frame.to_csv(target, index=False, float_format="%.4f", lineterminator="\n")
+        export(frame, target)
         exported.append((target.name, len(frame)))
     con.commit()
     return exported
 
 
 def export_fact(con):
-    frame = pd.read_sql_query(f"SELECT {', '.join(FACT_COLUMNS)} FROM fact_orders", con)
-    if frame.empty:
-        raise ValueError("fact_orders is empty; sql/07_business_summary.sql did not populate it")
-    for col in FACT_FLAGS:
-        frame[col] = frame[col].astype("Int64")
-    target = DATA_PROCESSED / "fact_orders.csv"
-    write_csv(frame, target, sort_by="Order_ID")
-    return target.name, len(frame)
+    fact = pd.read_sql_query("SELECT * FROM fact_orders ORDER BY Order_ID", con)
+    if fact.empty:
+        return
+    export(fact, FACT_EXPORT)
+    log(f"fact_orders -> {FACT_EXPORT.name} ({len(fact):,} rows)")
 
 
 def main():
@@ -75,9 +63,8 @@ def main():
     try:
         for path in sorted(SQL_DIR.glob("*.sql")):
             for name, rows in run_file(con, path):
-                log(f"{path.name} -> {name} ({rows} rows)")
-        name, rows = export_fact(con)
-        log(f"fact_orders -> {name} ({rows} rows)")
+                log(f"{path.name} -> {name} ({rows:,} rows)")
+        export_fact(con)
     finally:
         con.close()
 

@@ -1,6 +1,0 @@
-Verification_Bucket,Rx_Orders,Avg_Verification_Minutes,Sla_Eligible,Late,Breach_Rate_Pct,Avg_Delivery_Hours,Cancelled,Cancellation_Rate_Pct,Sample_Note
-0-30,548,17.3800,504,43,8.5300,26.6400,31,5.6600,
-31-60,443,43.4900,416,30,7.2100,29.4000,20,4.5100,
-61-120,334,82.2700,312,27,8.6500,27.1600,16,4.7900,
->120,190,221.2500,150,13,8.6700,30.0600,38,20.0000,
-Unknown,49,,7,0,0.0000,24.5600,42,85.7100,Breach rate on n < 30 - not a ranking claim

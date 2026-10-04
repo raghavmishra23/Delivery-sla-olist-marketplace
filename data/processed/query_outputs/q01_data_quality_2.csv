@@ -1,4 +1,10 @@
-Table_Name,Rows_Loaded,Unknown_City,Null_City_Tier,Null_Duration,Null_Verification_Minutes
-orders,2995,6,6,0,0
-prescription_verification,2995,0,0,0,1480
-deliveries,2790,0,0,50,0
+Table_Name,Rows_Loaded,Null_Delivered_Ts,Null_Approval_Hours,Null_Handoff_Hours,Null_Transit_Hours
+orders,99441,2965,221,1949,2989
+order_items,112650,0,0,0,0
+order_payments,103886,0,0,0,0
+order_reviews,98673,0,0,0,0
+customers,99441,0,0,0,0
+sellers,3095,0,0,0,0
+products,32951,623,0,0,0
+geolocation,19015,0,0,0,0
+fact_orders,0,0,0,0,0

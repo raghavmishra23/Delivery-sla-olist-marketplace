@@ -1,63 +1,81 @@
 # Data Quality Report
 
-Every figure below is written by `database/clean_data.py` from the issue log, so the counts here and the rows in `data/processed/dq_issue_log.csv` cannot drift apart.
+Source: the Olist Brazilian e-commerce tables in `data/external/`, 2016-2018. Every figure below is written by `database/clean_data.py` from `data/processed/dq_issue_log.csv`. The defects are the ones the published tables actually contain; none were introduced for this project.
 
 ## Rows checked
 
-| Table | Raw rows | Cleaned rows | Rows removed |
+| Table | Source rows | Cleaned rows | Difference |
 |---|---:|---:|---:|
-| `orders` | 3,015 | 2,995 | 20 |
-| `prescription_verification` | 3,002 | 2,995 | 7 |
-| `deliveries` | 2,802 | 2,790 | 12 |
+| `orders` | 99,441 | 99,441 | +0 |
+| `order_items` | 112,650 | 112,650 | +0 |
+| `order_payments` | 103,886 | 103,886 | +0 |
+| `order_reviews` | 99,224 | 98,673 | -551 |
+| `customers` | 99,441 | 99,441 | +0 |
+| `sellers` | 3,095 | 3,095 | +0 |
+| `products` | 32,951 | 32,951 | +0 |
+| `geolocation` | 1,000,163 | 19,015 | -981,148 |
 
-Total issues logged: **105** across 10 rules, written to `data/processed/dq_issue_log.csv` (one row per issue instance).
+Total issues logged: **7,774** across 15 rules. The log holds one row per issue instance keyed on `Order_ID`; the geolocation dedupe is the one exception and is logged as a single summary row, because that table carries no order key.
 
 ## Issues by rule
 
-| Rule | Description | Issues found | Expected from manifest |
-|---|---|---:|---:|
-| DQ-01 | Exact-duplicate Order_ID rows - keep first, log the rest | 10 | 10 |
-| DQ-02 | Conflicting duplicate Order_ID rows - exclude both, log | 10 | 10 |
-| DQ-03 | Child row whose Order_ID is missing from orders - exclude from relational analysis | 14 | 14 |
-| DQ-04 | Missing Customer_City - impute from the customer's other orders, else label Unknown | 20 | 20 |
-| DQ-05 | Negative or absurd (>500 h) Actual_Delivery_Hours - null the value, keep the order | 10 | 10 |
-| DQ-06 | Prescription verified before submitted - null the verified time and minutes | 8 | 8 |
-| DQ-07 | Verification minutes recorded on a Not Required row - null the minutes | 12 | 12 |
-| DQ-08 | Refund_Flag contradicts Refund_Amount - trust the amount, reconcile the flag | 10 | 10 |
-| DQ-09 | Deliveries row for a Cancelled order - exclude the row, keep the order | 5 | 5 |
-| DQ-10 | Delivered with NULL Actual_Delivery_Hours - keep the order, disclose the count | 6 | 6 |
+| Rule | Description | Issues found |
+|---|---|---:|
+| DQ-01 | Duplicate order_id in orders - keep the first row, log the rest | 0 |
+| DQ-02 | Child row whose order_id is absent from orders - exclude from relational analysis | 0 |
+| DQ-03 | Status delivered with no delivery timestamp - keep the order, exclude from the SLA denominator | 8 |
+| DQ-04 | Order with no order_items row - keep in order counts, exclude from item, seller and value metrics | 775 |
+| DQ-05 | Missing order_approved_at - null the approval lag, keep the order | 160 |
+| DQ-06 | Missing order_delivered_carrier_date - null the handoff and transit lags, keep the order | 1,783 |
+| DQ-07 | Delivery timestamp precedes the approval timestamp - null the approval lag, keep the order | 61 |
+| DQ-08 | Carrier handoff precedes the purchase timestamp - null the handoff lag, keep the order | 166 |
+| DQ-09 | Delivery timestamp precedes the carrier handoff - null the transit lag, keep the order | 23 |
+| DQ-10 | Cancelled order carrying a delivery timestamp - keep both, exclude from the SLA denominator | 6 |
+| DQ-11 | Order with no payment row - payment fields stay null | 1 |
+| DQ-12 | Order paid across several payment rows - attribute to the largest payment, log the ambiguity | 2,961 |
+| DQ-13 | Order fulfilled by several sellers - attribute to the highest-priced item, log the ambiguity | 1,278 |
+| DQ-14 | More than one review for one order - keep the latest answered review, log the rest | 551 |
+| DQ-15 | Exact duplicate geolocation rows - dedupe before collapsing to zip-prefix grain | 1 |
 
-## Manifest reconciliation
+DQ-15 counts as one issue because it is the summary row described above; it removed 261,831 duplicate geolocation rows.
 
-`data/raw/dirty_data_manifest.json` records every defect the generator injected, with the affected Order_IDs. The cleaning script asserts the issue-log counts against it, so a silent drop fails the run.
+## Verification
 
-Two rules need an adjustment before the comparison is meaningful:
-
-- **DQ-02** — the manifest counts 5 injected conflicting rows, but the rule excludes *both* rows of each pair, so 10 issue rows are expected.
-- **DQ-03** — 4 unmatched foreign keys were injected, and excluding the 5 DQ-02 orders orphans 10 of their child rows, which DQ-03 then legitimately catches. Expected total: 14. This interaction is a real consequence of the DQ-02 exclusion, not a second defect, and is handled explicitly rather than netted out.
-
-All ten rules reconcile exactly.
+There is no injected-defect manifest to reconcile against, so `clean_data.py` recounts every rule directly from the external files with expressions written independently of the cleaning path and raises if the two disagree. The counts above are therefore reproducible from the source data alone.
 
 ## Actions taken
 
-- **10** exact duplicate rows dropped, first occurrence kept.
-- **10** rows across 5 Order_IDs excluded entirely as conflicting duplicates; those orders appear in no downstream table.
-- **14** child rows with no matching order excluded from relational analysis.
-- **14** missing cities imputed from the customer's other orders; **6** had no unambiguous source and carry `Unknown` with a NULL city tier. `Unknown` rows stay in totals and are excluded from city rankings.
-- **10** impossible delivery durations and **8** reversed verification timestamps nulled; the orders stay in order counts and drop out of duration averages only.
-- **12** verification minutes removed from `Not Required` rows.
-- **10** refund flags reset to agree with `Refund_Amount`, which is treated as the authoritative signal; where that implies a refund, `Order_Status` moves to `Refunded` with it so the two tables stay consistent.
-- **5** delivery rows against Cancelled orders excluded; the orders themselves are kept.
-- **6** Delivered rows have no duration. They keep their status and their place in delivered counts, and are excluded from the SLA rate denominator.
+- **0** duplicate `order_id` rows and **0** orphan child rows were found: the published tables are referentially clean, so both rules pass through empty. They stay in the pipeline because an upstream refresh could reintroduce either.
+- **8** orders carry status `delivered` with no delivery timestamp. The status is kept, and the orders are excluded from the SLA denominator and from every duration metric.
+- **775** orders have no `order_items` row. They stay in order counts and carry no item count, seller, category or value.
+- **160** missing approval timestamps and **1,783** missing carrier handoff timestamps null the lags that depend on them. No order is dropped.
+- **61** orders are marked delivered before they were approved. The approval lag is nulled rather than the delivery timestamp: the carrier handoff date corroborates the delivery, and nulling the delivery timestamp would move the headline SLA rate.
+- **166** orders were handed to the carrier before the purchase timestamp and **23** were delivered before that handoff. The handoff and transit lags respectively are nulled; the end-to-end delivery duration is left intact because it is independently coherent.
+- **6** cancelled orders carry a delivery timestamp. Both values are kept as found and the orders sit outside the SLA denominator, which filters on status.
+- **1** order has no payment row; **2,961** orders are paid across several rows and are attributed to the largest payment value, ties broken on payment sequence.
+- **1,278** orders are fulfilled by more than one seller. `Is_Primary_Item` marks the highest-priced item, ties broken on item number, and `Seller_Count` keeps the ambiguity visible.
+- **551** orders carry more than one review. The latest answered review is kept, ties broken on review id so reruns agree.
+- **261,831** exact duplicate geolocation rows were removed before the table was collapsed to one row per zip prefix.
 
-## Effect on the SLA denominator
+## The on-time definition
 
-After cleaning, **2,756** rows carry `Delivery_Status = 'Delivered'` and **2,740** of those have a usable duration (99.42%). The on-time rate and SLA breach rate are computed over those 2,740 orders; the remaining 16 are disclosed rather than silently dropped.
+`order_estimated_delivery_date` is stored at `00:00:00` on every one of the 99,441 orders. Comparing a delivery timestamp against that midnight would mark an order delivered during its promised day as late. On-time is therefore evaluated at **date granularity**:
+
+```
+DATE(Delivered_Ts) <= DATE(Estimated_Ts)
+```
+
+Durations stay on the timestamp basis. The two are deliberately different, and the gap is material: on the timestamp comparison the same 96,470 orders read 91.89% on time instead of 93.23%.
+
+## SLA denominator
+
+**96,478** orders carry status `delivered`, and **96,470** of those have both a delivery timestamp and a promised date (99.99% of delivered orders). On-time rate and breach rate are computed over those 96,470 orders: **89,936** on time (**93.23%**), **6,534** late (**6.77%**), mean delay among late orders **271.25 h**. Mean delivery duration is **301.40 h** against a mean promise of **569.67 h**.
 
 ## Remaining limitations
 
-- Imputed cities are inferred, not observed. A customer who moved mid-period would be mis-assigned, and the imputed rows are not distinguishable in the cleaned table — the issue log is the audit trail.
-- Nulled durations and verification times are unrecoverable. The affected orders stay in counts, so count-based and duration-based metrics have slightly different denominators by design.
-- `Refund_Amount` is trusted over `Refund_Flag` on every contradiction. If the amount were the corrupt field in a given row, the reconciliation would propagate the error.
-- Orders excluded by DQ-02 are gone from every table, so totals are short of the full order population by that amount. The count is disclosed above rather than back-filled.
-- `In Transit` rows legitimately have no duration (the order was still moving at the data cut-off); they are not a data-quality defect and are not logged.
+- Nulled lags are unrecoverable. Affected orders stay in order counts, so count-based and duration-based metrics have slightly different denominators by design; the counts are above.
+- Primary seller and primary payment are attribution conventions, not facts. Any per-seller or per-payment-type cut inherits them for the 1,278 multi-seller and 2,961 multi-payment orders.
+- The 'impossible sequence' rules assume the corroborated timestamp is the correct one. Where a sequence is incoherent, the pipeline nulls the derived lag rather than guessing which field is wrong.
+- 775 orders have no items, so order value, freight, category and seller are null for them. Totals over those columns cover fewer orders than the order count.
+- Geolocation is collapsed to the mean coordinate and the modal city and state per zip prefix, so it locates a prefix, not an address.
+- Order dates span 2016-09-04 to 2018-10-17. The first and last months are partial and thin, so monthly trends should start and end inside the dense middle of that window.

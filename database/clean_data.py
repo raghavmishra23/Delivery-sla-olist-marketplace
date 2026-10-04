@@ -1,24 +1,20 @@
-"""Applies the DQ-01..DQ-10 cleaning rules to the raw CSVs and writes the cleaned tables, issue log and DQ report."""
-
-import json
+"""Applies the DQ-01..DQ-15 rules to data/external and writes the cleaned tables, issue log and DQ report."""
 
 import pandas as pd
 
-from common import (CITIES, DATA_PROCESSED, DATA_RAW, DQ_RULES, REPORTS, log, pct, read_text,
-                    write_csv, write_text)
+from common import (APPROVAL_BUCKETS, DATA_EXTERNAL, DATA_PROCESSED, DELIVERED_STATUS, DQ_RULES,
+                    REPORTS, UNKNOWN_BUCKET, log, pct, write_csv, write_text)
 
 ISSUE_COLS = ["Rule_ID", "Table_Name", "Order_ID", "Field", "Raw_Value", "Action"]
-ABSURD_HOURS = 500
-
-
-def read_raw():
-    orders = pd.read_csv(DATA_RAW / "orders.csv", parse_dates=["Order_Date"])
-    verif = pd.read_csv(
-        DATA_RAW / "prescription_verification.csv",
-        parse_dates=["Prescription_Submitted_Time", "Prescription_Verified_Time"],
-    )
-    deliveries = pd.read_csv(DATA_RAW / "deliveries.csv")
-    return orders, verif, deliveries
+ORDER_TS = {
+    "order_purchase_timestamp": "Purchase_Ts",
+    "order_approved_at": "Approved_Ts",
+    "order_delivered_carrier_date": "Carrier_Ts",
+    "order_delivered_customer_date": "Delivered_Ts",
+    "order_estimated_delivery_date": "Estimated_Ts",
+}
+ZIP = {"dtype": {"customer_zip_code_prefix": str, "seller_zip_code_prefix": str,
+                 "geolocation_zip_code_prefix": str}}
 
 
 class IssueLog:
@@ -31,9 +27,13 @@ class IssueLog:
             "Table_Name": table,
             "Order_ID": order_id,
             "Field": field,
-            "Raw_Value": "" if pd.isna(raw_value) else str(raw_value),
+            "Raw_Value": "" if raw_value is None or pd.isna(raw_value) else str(raw_value),
             "Action": action,
         })
+
+    def add_many(self, rule, table, order_ids, field, action, raw=None):
+        for order_id in sorted(order_ids):
+            self.add(rule, table, order_id, field, raw, action)
 
     def frame(self):
         return pd.DataFrame(self.rows, columns=ISSUE_COLS).sort_values(
@@ -41,248 +41,397 @@ class IssueLog:
         )
 
     def counts(self):
-        return self.frame()["Rule_ID"].value_counts().to_dict()
+        """Every rule appears, including the ones this dataset happens not to trigger."""
+        seen = self.frame()["Rule_ID"].value_counts().to_dict()
+        return {rule: seen.get(rule, 0) for rule in DQ_RULES}
 
 
-def dedupe_orders(orders, issues):
-    """DQ-01 keeps the first of an exact duplicate set; DQ-02 excludes every row of a conflicting set."""
-    drop = []
-    for order_id, rows in orders[orders.duplicated("Order_ID", keep=False)].groupby("Order_ID"):
-        if len(rows.drop_duplicates()) == 1:
-            for idx in rows.index[1:]:
-                issues.add("DQ-01", "orders", order_id, "Order_ID", order_id,
-                           "Kept the first occurrence, dropped the duplicate row")
-                drop.append(idx)
-        else:
-            for idx in rows.index:
-                issues.add("DQ-02", "orders", order_id, "Order_ID", order_id,
-                           "Excluded every row of the conflicting set; order is absent from all analysis")
-                drop.append(idx)
-    return orders.drop(index=drop).reset_index(drop=True)
+def source(name, **kwargs):
+    return pd.read_csv(DATA_EXTERNAL / f"{name}.csv", **kwargs)
 
 
-def fix_cities(orders, issues):
-    """DQ-04: impute from the customer's other orders when they agree on one city, else label Unknown."""
-    known = (
-        orders.loc[orders["Customer_City"].notna()]
-        .groupby("Customer_ID")["Customer_City"]
-        .agg(lambda s: s.unique().tolist())
-    )
-    for idx, row in orders.loc[orders["Customer_City"].isna()].iterrows():
-        options = known.get(row["Customer_ID"], [])
-        if len(options) == 1:
-            city = options[0]
-            action = f"Imputed {city} from the customer's other orders"
-        else:
-            city = "Unknown"
-            action = "No unambiguous source city; labelled Unknown and excluded from city rankings"
-        orders.loc[idx, "Customer_City"] = city
-        orders.loc[idx, "City_Tier"] = CITIES.get(city)
-        issues.add("DQ-04", "orders", row["Order_ID"], "Customer_City", None, action)
-    return orders
+def read_orders():
+    return source("olist_orders_dataset", parse_dates=list(ORDER_TS)).rename(columns={
+        **ORDER_TS, "order_id": "Order_ID", "customer_id": "Customer_ID", "order_status": "Order_Status",
+    })
 
 
-def drop_orphans(child, valid_ids, table, issues):
-    """DQ-03: a child row whose Order_ID is not in the cleaned orders table cannot join to anything."""
-    orphan = ~child["Order_ID"].isin(valid_ids)
-    for order_id in child.loc[orphan, "Order_ID"]:
-        issues.add("DQ-03", table, order_id, "Order_ID", order_id,
-                   "Excluded from relational analysis; no matching order")
+def hours(end, start):
+    return ((end - start).dt.total_seconds() / 3600).round(2)
+
+
+def bucket(approval_hours):
+    edges = [1, 6, 24]
+    out = pd.Series(APPROVAL_BUCKETS[-1], index=approval_hours.index)
+    for label, edge in zip(reversed(APPROVAL_BUCKETS[:-1]), reversed(edges)):
+        out = out.mask(approval_hours <= edge, label)
+    return out.mask(approval_hours.isna(), UNKNOWN_BUCKET)
+
+
+def clean_orders(orders, issues):
+    """Builds the duration columns and the SLA flags, nulling every lag the DQ rules disown."""
+    dupes = orders["Order_ID"].duplicated()
+    issues.add_many("DQ-01", "orders", orders.loc[dupes, "Order_ID"], "Order_ID",
+                    "Kept the first occurrence, dropped the duplicate row")
+    orders = orders.loc[~dupes].reset_index(drop=True)
+
+    purchase, approved = orders["Purchase_Ts"], orders["Approved_Ts"]
+    carrier, delivered, estimated = orders["Carrier_Ts"], orders["Delivered_Ts"], orders["Estimated_Ts"]
+
+    no_delivery = (orders["Order_Status"] == DELIVERED_STATUS) & delivered.isna()
+    issues.add_many("DQ-03", "orders", orders.loc[no_delivery, "Order_ID"], "Delivered_Ts",
+                    "Kept the order; excluded from the SLA denominator and every duration metric")
+
+    no_approval = approved.isna()
+    issues.add_many("DQ-05", "orders", orders.loc[no_approval, "Order_ID"], "Approved_Ts",
+                    "Nulled the approval lag; the order stays in all counts")
+
+    no_carrier = carrier.isna()
+    issues.add_many("DQ-06", "orders", orders.loc[no_carrier, "Order_ID"], "Carrier_Ts",
+                    "Nulled the handoff and transit lags; the order stays in all counts")
+
+    early_delivery = delivered < approved
+    issues.add_many("DQ-07", "orders", orders.loc[early_delivery, "Order_ID"], "Approved_Ts",
+                    "Delivery precedes approval; nulled the approval lag and kept the delivery timestamp, "
+                    "which the carrier date corroborates")
+
+    early_handoff = carrier < purchase
+    issues.add_many("DQ-08", "orders", orders.loc[early_handoff, "Order_ID"], "Carrier_Ts",
+                    "Handoff precedes purchase; nulled the handoff lag")
+
+    early_transit = delivered < carrier
+    issues.add_many("DQ-09", "orders", orders.loc[early_transit, "Order_ID"], "Delivered_Ts",
+                    "Delivery precedes the carrier handoff; nulled the transit lag")
+
+    cancelled_delivery = (orders["Order_Status"] == "canceled") & delivered.notna()
+    issues.add_many("DQ-10", "orders", orders.loc[cancelled_delivery, "Order_ID"], "Order_Status",
+                    "Cancelled order with a delivery timestamp; kept both, excluded from the SLA denominator")
+
+    approval = hours(approved, purchase).mask(no_approval | early_delivery)
+    handoff = hours(carrier, purchase).mask(no_carrier | early_handoff)
+    transit = hours(delivered, carrier).mask(no_carrier | early_transit)
+    actual = hours(delivered, purchase)
+    promised = hours(estimated, purchase)
+
+    elig = (orders["Order_Status"] == DELIVERED_STATUS) & delivered.notna() & estimated.notna()
+    # Date granularity, not timestamp: the promise is a calendar day stored at midnight.
+    on_time = (delivered.dt.normalize() <= estimated.dt.normalize()).where(elig)
+
+    return orders.assign(
+        Approval_Hours=approval,
+        Handoff_Hours=handoff,
+        Transit_Hours=transit,
+        Actual_Delivery_Hours=actual,
+        Promised_Delivery_Hours=promised,
+        Delay_Hours=hours(delivered, estimated),
+        Approval_Bucket=bucket(approval),
+        Is_Delivered=(orders["Order_Status"] == DELIVERED_STATUS).astype(int),
+        Is_Sla_Eligible=elig.astype(int),
+        Is_On_Time=on_time.astype("Int64"),
+        Is_Late=(1 - on_time).astype("Int64"),
+    )[["Order_ID", "Customer_ID", "Order_Status", *ORDER_TS.values(), "Approval_Hours", "Handoff_Hours",
+       "Transit_Hours", "Actual_Delivery_Hours", "Promised_Delivery_Hours", "Delay_Hours",
+       "Approval_Bucket", "Is_Delivered", "Is_Sla_Eligible", "Is_On_Time", "Is_Late"]]
+
+
+def drop_orphans(child, order_ids, table, issues):
+    orphan = ~child["Order_ID"].isin(order_ids)
+    issues.add_many("DQ-02", table, child.loc[orphan, "Order_ID"], "Order_ID",
+                    "Excluded from relational analysis; no matching order")
     return child.loc[~orphan].reset_index(drop=True)
 
 
-def clean_verification(verif, issues):
-    reversed_rows = verif["Prescription_Verified_Time"] < verif["Prescription_Submitted_Time"]
-    for _, row in verif.loc[reversed_rows].iterrows():
-        issues.add("DQ-06", "prescription_verification", row["Order_ID"], "Prescription_Verified_Time",
-                   row["Prescription_Verified_Time"],
-                   "Verified before submitted; nulled the verified time and minutes, kept the order")
-    verif.loc[reversed_rows, ["Prescription_Verified_Time", "Prescription_Verification_Minutes"]] = None
+def clean_items(items, orders, issues):
+    """Flags one primary item per order so seller attribution has a single home."""
+    items = items.rename(columns={
+        "order_id": "Order_ID", "order_item_id": "Order_Item_Id", "product_id": "Product_Id",
+        "seller_id": "Seller_Id", "shipping_limit_date": "Shipping_Limit_Ts",
+        "price": "Price", "freight_value": "Freight_Value",
+    })
+    items = drop_orphans(items, set(orders["Order_ID"]), "order_items", issues)
 
-    stray = (verif["Prescription_Status"] == "Not Required") & verif["Prescription_Verification_Minutes"].notna()
-    for _, row in verif.loc[stray].iterrows():
-        issues.add("DQ-07", "prescription_verification", row["Order_ID"], "Prescription_Verification_Minutes",
-                   row["Prescription_Verification_Minutes"],
-                   "Minutes recorded on a Not Required row; nulled the minutes")
-    verif.loc[stray, "Prescription_Verification_Minutes"] = None
-    return verif
+    missing = set(orders["Order_ID"]) - set(items["Order_ID"])
+    issues.add_many("DQ-04", "orders", missing, "Order_ID",
+                    "No order_items row; kept in order counts, excluded from item, seller and value metrics")
 
+    multi = items.groupby("Order_ID")["Seller_Id"].transform("nunique") > 1
+    issues.add_many("DQ-13", "order_items", items.loc[multi, "Order_ID"].unique(), "Seller_Id",
+                    "Several sellers on one order; attributed to the highest-priced item, Seller_Count kept")
 
-def clean_deliveries(deliveries, cancelled_ids, issues):
-    ghost = deliveries["Order_ID"].isin(cancelled_ids)
-    for order_id in deliveries.loc[ghost, "Order_ID"]:
-        issues.add("DQ-09", "deliveries", order_id, "Order_ID", order_id,
-                   "Delivery row against a Cancelled order; excluded the row, kept the order")
-    deliveries = deliveries.loc[~ghost].reset_index(drop=True)
-
-    # DQ-10 is detected on the raw NULL so the hours DQ-05 nulls below are not counted twice.
-    missing_hours = (deliveries["Delivery_Status"] == "Delivered") & deliveries["Actual_Delivery_Hours"].isna()
-    for order_id in deliveries.loc[missing_hours, "Order_ID"]:
-        issues.add("DQ-10", "deliveries", order_id, "Actual_Delivery_Hours", None,
-                   "Delivered without a duration; status kept, excluded from SLA denominators")
-
-    bad_hours = (deliveries["Actual_Delivery_Hours"] < 0) | (deliveries["Actual_Delivery_Hours"] > ABSURD_HOURS)
-    for _, row in deliveries.loc[bad_hours].iterrows():
-        issues.add("DQ-05", "deliveries", row["Order_ID"], "Actual_Delivery_Hours",
-                   row["Actual_Delivery_Hours"],
-                   "Impossible duration; nulled the value, kept the order in counts")
-    deliveries.loc[bad_hours, "Actual_Delivery_Hours"] = None
-
-    contradiction = (
-        ((deliveries["Refund_Flag"] == 1) & (deliveries["Refund_Amount"] <= 0))
-        | ((deliveries["Refund_Flag"] == 0) & (deliveries["Refund_Amount"] > 0))
-    )
-    for _, row in deliveries.loc[contradiction].iterrows():
-        issues.add("DQ-08", "deliveries", row["Order_ID"], "Refund_Flag", row["Refund_Flag"],
-                   f"Flag contradicts Refund_Amount {row['Refund_Amount']:.2f}; reset the flag and the "
-                   "order status to match the amount")
-    deliveries.loc[contradiction, "Refund_Flag"] = (deliveries.loc[contradiction, "Refund_Amount"] > 0).astype(int)
-    # A real refund amount means the order was refunded, so Order_Status moves with the flag.
-    refunded_ids = set(deliveries.loc[contradiction & (deliveries["Refund_Amount"] > 0), "Order_ID"])
-    return deliveries, refunded_ids
+    primary = (items.sort_values(["Order_ID", "Price", "Order_Item_Id"], ascending=[True, False, True])
+                    .drop_duplicates("Order_ID").index)
+    return items.assign(Is_Primary_Item=items.index.isin(primary).astype(int))
 
 
-def expected_counts(manifest, verif_raw, deliveries_raw):
-    """Manifest counts, adjusted for the two places where one injected defect produces more than one issue row."""
-    rules = manifest["rules"]
-    expected = {rule: payload["count"] for rule, payload in rules.items()}
-    # DQ-02 excludes both rows of each conflicting pair, so each injected ID yields two issue rows.
-    expected["DQ-02"] *= 2
-    # Excluding a DQ-02 order orphans its child rows, which are then legitimately caught by DQ-03.
-    dq02 = set(rules["DQ-02"]["order_ids"])
-    cascade = int(verif_raw["Order_ID"].isin(dq02).sum() + deliveries_raw["Order_ID"].isin(dq02).sum())
-    expected["DQ-03"] += cascade
-    return expected, cascade
+def clean_payments(payments, orders, issues):
+    payments = payments.rename(columns={
+        "order_id": "Order_ID", "payment_sequential": "Payment_Sequential",
+        "payment_type": "Payment_Type", "payment_installments": "Payment_Installments",
+        "payment_value": "Payment_Value",
+    })
+    payments = drop_orphans(payments, set(orders["Order_ID"]), "order_payments", issues)
+
+    missing = set(orders["Order_ID"]) - set(payments["Order_ID"])
+    issues.add_many("DQ-11", "orders", missing, "Order_ID",
+                    "No payment row; payment type and installments stay null")
+
+    split = payments.groupby("Order_ID")["Payment_Sequential"].transform("size") > 1
+    issues.add_many("DQ-12", "order_payments", payments.loc[split, "Order_ID"].unique(), "Payment_Type",
+                    "Several payment rows on one order; attributed to the largest payment value")
+
+    primary = (payments.sort_values(["Order_ID", "Payment_Value", "Payment_Sequential"],
+                                    ascending=[True, False, True])
+                       .drop_duplicates("Order_ID").index)
+    return payments.assign(Is_Primary_Payment=payments.index.isin(primary).astype(int))
 
 
-def write_report(orders_raw, verif_raw, deliveries_raw, orders, verif, deliveries, issues, expected, cascade):
+def clean_reviews(reviews, orders, issues):
+    """Keeps the latest answered review per order; review_id breaks ties so reruns match."""
+    reviews = reviews.rename(columns={
+        "order_id": "Order_ID", "review_id": "Review_Id", "review_score": "Review_Score",
+        "review_creation_date": "Review_Created_Ts", "review_answer_timestamp": "Review_Answer_Ts",
+    })[["Order_ID", "Review_Id", "Review_Score", "Review_Created_Ts", "Review_Answer_Ts"]]
+    reviews = drop_orphans(reviews, set(orders["Order_ID"]), "order_reviews", issues)
+
+    ordered = reviews.sort_values(["Order_ID", "Review_Answer_Ts", "Review_Id"], kind="stable")
+    kept = ordered.drop_duplicates("Order_ID", keep="last")
+    dropped = ordered.loc[~ordered.index.isin(kept.index)]
+    for _, row in dropped.iterrows():
+        issues.add("DQ-14", "order_reviews", row["Order_ID"], "Review_Id", row["Review_Id"],
+                   "Duplicate review for the order; kept the latest answered review")
+    return kept.reset_index(drop=True)
+
+
+def clean_geolocation(geo, issues):
+    """Dedupes, then collapses to zip-prefix grain - the only level the customer and seller tables join on."""
+    deduped = geo.drop_duplicates()
+    issues.add("DQ-15", "geolocation", "", "geolocation row", len(geo) - len(deduped),
+               "Removed exact duplicate rows before collapsing to zip-prefix grain; logged as one summary "
+               "row because the table has no order key")
+    return (deduped.groupby("geolocation_zip_code_prefix", as_index=False)
+                   .agg(Geo_Lat=("geolocation_lat", "mean"),
+                        Geo_Lng=("geolocation_lng", "mean"),
+                        Geo_City=("geolocation_city", lambda s: s.mode().iat[0]),
+                        Geo_State=("geolocation_state", lambda s: s.mode().iat[0]))
+                   .rename(columns={"geolocation_zip_code_prefix": "Zip_Prefix"}))
+
+
+def recount():
+    """Independent recount straight off the external files; clean_data raises if the log disagrees."""
+    orders = read_orders()
+    items = source("olist_order_items_dataset", usecols=["order_id", "seller_id"])
+    payments = source("olist_order_payments_dataset", usecols=["order_id", "payment_sequential"])
+    reviews = source("olist_order_reviews_dataset", usecols=["order_id"])
+    geo = source("olist_geolocation_dataset")
+    ids = set(orders["Order_ID"])
+    delivered, approved = orders["Delivered_Ts"], orders["Approved_Ts"]
+    return {
+        "DQ-01": int(orders["Order_ID"].duplicated().sum()),
+        "DQ-02": int(sum((~frame["order_id"].isin(ids)).sum() for frame in (items, payments, reviews))),
+        "DQ-03": int(((orders["Order_Status"] == DELIVERED_STATUS) & delivered.isna()).sum()),
+        "DQ-04": len(ids - set(items["order_id"])),
+        "DQ-05": int(approved.isna().sum()),
+        "DQ-06": int(orders["Carrier_Ts"].isna().sum()),
+        "DQ-07": int((delivered < approved).sum()),
+        "DQ-08": int((orders["Carrier_Ts"] < orders["Purchase_Ts"]).sum()),
+        "DQ-09": int((delivered < orders["Carrier_Ts"]).sum()),
+        "DQ-10": int(((orders["Order_Status"] == "canceled") & delivered.notna()).sum()),
+        "DQ-11": len(ids - set(payments["order_id"])),
+        "DQ-12": int((payments.groupby("order_id").size() > 1).sum()),
+        "DQ-13": int((items.groupby("order_id")["seller_id"].nunique() > 1).sum()),
+        "DQ-14": int(reviews["order_id"].duplicated().sum()),
+        "DQ-15": 1,
+    }
+
+
+def write_report(sizes, orders, issues, geo_dupes):
     found = issues.counts()
-    log_rows = len(issues.rows)
-    unknown_city = int((orders["Customer_City"] == "Unknown").sum())
-    imputed = found["DQ-04"] - unknown_city
-    sla_eligible = int(((deliveries["Delivery_Status"] == "Delivered")
-                        & deliveries["Actual_Delivery_Hours"].notna()).sum())
-    delivered = int((deliveries["Delivery_Status"] == "Delivered").sum())
-
+    elig = orders.loc[orders["Is_Sla_Eligible"] == 1]
+    late = elig.loc[elig["Is_Late"] == 1]
     lines = [
         "# Data Quality Report",
         "",
-        "Every figure below is written by `database/clean_data.py` from the issue log, so the counts here and "
-        "the rows in `data/processed/dq_issue_log.csv` cannot drift apart.",
+        "Source: the Olist Brazilian e-commerce tables in `data/external/`, 2016-2018. Every figure below is "
+        "written by `database/clean_data.py` from `data/processed/dq_issue_log.csv`. The defects are the ones "
+        "the published tables actually contain; none were introduced for this project.",
         "",
         "## Rows checked",
         "",
-        "| Table | Raw rows | Cleaned rows | Rows removed |",
+        "| Table | Source rows | Cleaned rows | Difference |",
         "|---|---:|---:|---:|",
     ]
-    for name, raw, clean in [("orders", orders_raw, orders),
-                             ("prescription_verification", verif_raw, verif),
-                             ("deliveries", deliveries_raw, deliveries)]:
-        lines.append(f"| `{name}` | {len(raw):,} | {len(clean):,} | {len(raw) - len(clean):,} |")
+    for name, raw, clean in sizes:
+        lines.append(f"| `{name}` | {raw:,} | {clean:,} | {clean - raw:+,} |")
 
     lines += [
         "",
-        f"Total issues logged: **{log_rows}** across {len(found)} rules, written to "
-        "`data/processed/dq_issue_log.csv` (one row per issue instance).",
+        f"Total issues logged: **{len(issues.rows):,}** across {len(found)} rules. The log holds one row per "
+        "issue instance keyed on `Order_ID`; the geolocation dedupe is the one exception and is logged as a "
+        "single summary row, because that table carries no order key.",
         "",
         "## Issues by rule",
         "",
-        "| Rule | Description | Issues found | Expected from manifest |",
-        "|---|---|---:|---:|",
+        "| Rule | Description | Issues found |",
+        "|---|---|---:|",
     ]
     for rule in sorted(DQ_RULES):
-        lines.append(f"| {rule} | {DQ_RULES[rule]} | {found.get(rule, 0)} | {expected[rule]} |")
+        lines.append(f"| {rule} | {DQ_RULES[rule]} | {found[rule]:,} |")
 
     lines += [
         "",
-        "## Manifest reconciliation",
+        f"DQ-15 counts as one issue because it is the summary row described above; it removed "
+        f"{geo_dupes:,} duplicate geolocation rows.",
         "",
-        "`data/raw/dirty_data_manifest.json` records every defect the generator injected, with the affected "
-        "Order_IDs. The cleaning script asserts the issue-log counts against it, so a silent drop fails the run.",
+        "## Verification",
         "",
-        "Two rules need an adjustment before the comparison is meaningful:",
-        "",
-        "- **DQ-02** — the manifest counts 5 injected conflicting rows, but the rule excludes *both* rows of "
-        "each pair, so 10 issue rows are expected.",
-        f"- **DQ-03** — 4 unmatched foreign keys were injected, and excluding the 5 DQ-02 orders orphans "
-        f"{cascade} of their child rows, which DQ-03 then legitimately catches. Expected total: "
-        f"{expected['DQ-03']}. This interaction is a real consequence of the DQ-02 exclusion, not a second "
-        "defect, and is handled explicitly rather than netted out.",
-        "",
-        "All ten rules reconcile exactly.",
+        "There is no injected-defect manifest to reconcile against, so `clean_data.py` recounts every rule "
+        "directly from the external files with expressions written independently of the cleaning path and "
+        "raises if the two disagree. The counts above are therefore reproducible from the source data alone.",
         "",
         "## Actions taken",
         "",
-        f"- **{found['DQ-01']}** exact duplicate rows dropped, first occurrence kept.",
-        f"- **{found['DQ-02']}** rows across {expected['DQ-02'] // 2} Order_IDs excluded entirely as conflicting "
-        "duplicates; those orders appear in no downstream table.",
-        f"- **{found['DQ-03']}** child rows with no matching order excluded from relational analysis.",
-        f"- **{imputed}** missing cities imputed from the customer's other orders; **{unknown_city}** had no "
-        "unambiguous source and carry `Unknown` with a NULL city tier. `Unknown` rows stay in totals and are "
-        "excluded from city rankings.",
-        f"- **{found['DQ-05']}** impossible delivery durations and **{found['DQ-06']}** reversed verification "
-        "timestamps nulled; the orders stay in order counts and drop out of duration averages only.",
-        f"- **{found['DQ-07']}** verification minutes removed from `Not Required` rows.",
-        f"- **{found['DQ-08']}** refund flags reset to agree with `Refund_Amount`, which is treated as the "
-        "authoritative signal; where that implies a refund, `Order_Status` moves to `Refunded` with it so the "
-        "two tables stay consistent.",
-        f"- **{found['DQ-09']}** delivery rows against Cancelled orders excluded; the orders themselves are kept.",
-        f"- **{found['DQ-10']}** Delivered rows have no duration. They keep their status and their place in "
-        "delivered counts, and are excluded from the SLA rate denominator.",
+        f"- **{found.get('DQ-01', 0)}** duplicate `order_id` rows and **{found.get('DQ-02', 0)}** orphan child "
+        "rows were found: the published tables are referentially clean, so both rules pass through empty. They "
+        "stay in the pipeline because an upstream refresh could reintroduce either.",
+        f"- **{found['DQ-03']}** orders carry status `delivered` with no delivery timestamp. The status is "
+        "kept, and the orders are excluded from the SLA denominator and from every duration metric.",
+        f"- **{found['DQ-04']:,}** orders have no `order_items` row. They stay in order counts and carry no "
+        "item count, seller, category or value.",
+        f"- **{found['DQ-05']}** missing approval timestamps and **{found['DQ-06']:,}** missing carrier "
+        "handoff timestamps null the lags that depend on them. No order is dropped.",
+        f"- **{found['DQ-07']}** orders are marked delivered before they were approved. The approval lag is "
+        "nulled rather than the delivery timestamp: the carrier handoff date corroborates the delivery, and "
+        "nulling the delivery timestamp would move the headline SLA rate.",
+        f"- **{found['DQ-08']}** orders were handed to the carrier before the purchase timestamp and "
+        f"**{found['DQ-09']}** were delivered before that handoff. The handoff and transit lags respectively "
+        "are nulled; the end-to-end delivery duration is left intact because it is independently coherent.",
+        f"- **{found['DQ-10']}** cancelled orders carry a delivery timestamp. Both values are kept as found "
+        "and the orders sit outside the SLA denominator, which filters on status.",
+        f"- **{found['DQ-11']}** order has no payment row; **{found['DQ-12']:,}** orders are paid across "
+        "several rows and are attributed to the largest payment value, ties broken on payment sequence.",
+        f"- **{found['DQ-13']:,}** orders are fulfilled by more than one seller. `Is_Primary_Item` marks the "
+        "highest-priced item, ties broken on item number, and `Seller_Count` keeps the ambiguity visible.",
+        f"- **{found['DQ-14']}** orders carry more than one review. The latest answered review is kept, ties "
+        "broken on review id so reruns agree.",
+        f"- **{geo_dupes:,}** exact duplicate geolocation rows were removed before the table was collapsed to "
+        "one row per zip prefix.",
         "",
-        "## Effect on the SLA denominator",
+        "## The on-time definition",
         "",
-        f"After cleaning, **{delivered:,}** rows carry `Delivery_Status = 'Delivered'` and **{sla_eligible:,}** "
-        f"of those have a usable duration ({pct(sla_eligible, delivered)}%). The on-time rate and SLA breach "
-        f"rate are computed over those {sla_eligible:,} orders; the remaining {delivered - sla_eligible} are "
-        "disclosed rather than silently dropped.",
+        "`order_estimated_delivery_date` is stored at `00:00:00` on every one of the "
+        f"{sizes[0][1]:,} orders. Comparing a delivery timestamp against that midnight would mark an order "
+        "delivered during its promised day as late. On-time is therefore evaluated at **date granularity**:",
+        "",
+        "```",
+        "DATE(Delivered_Ts) <= DATE(Estimated_Ts)",
+        "```",
+        "",
+        f"Durations stay on the timestamp basis. The two are deliberately different, and the gap is material: "
+        f"on the timestamp comparison the same {len(elig):,} orders read "
+        f"{pct(int((elig['Delivered_Ts'] <= elig['Estimated_Ts']).sum()), len(elig))}% on time instead of "
+        f"{pct(int(elig['Is_On_Time'].sum()), len(elig))}%.",
+        "",
+        "## SLA denominator",
+        "",
+        f"**{int(orders['Is_Delivered'].sum()):,}** orders carry status `delivered`, and "
+        f"**{len(elig):,}** of those have both a delivery timestamp and a promised date "
+        f"({pct(len(elig), int(orders['Is_Delivered'].sum()))}% of delivered orders). On-time rate and breach "
+        f"rate are computed over those {len(elig):,} orders: **{int(elig['Is_On_Time'].sum()):,}** on time "
+        f"(**{pct(int(elig['Is_On_Time'].sum()), len(elig))}%**), **{len(late):,}** late "
+        f"(**{pct(len(late), len(elig))}%**), mean delay among late orders "
+        f"**{late['Delay_Hours'].mean():.2f} h**. Mean delivery duration is "
+        f"**{elig['Actual_Delivery_Hours'].mean():.2f} h** against a mean promise of "
+        f"**{elig['Promised_Delivery_Hours'].mean():.2f} h**.",
         "",
         "## Remaining limitations",
         "",
-        "- Imputed cities are inferred, not observed. A customer who moved mid-period would be mis-assigned, "
-        "and the imputed rows are not distinguishable in the cleaned table — the issue log is the audit trail.",
-        "- Nulled durations and verification times are unrecoverable. The affected orders stay in counts, so "
-        "count-based and duration-based metrics have slightly different denominators by design.",
-        "- `Refund_Amount` is trusted over `Refund_Flag` on every contradiction. If the amount were the corrupt "
-        "field in a given row, the reconciliation would propagate the error.",
-        "- Orders excluded by DQ-02 are gone from every table, so totals are short of the full order population "
-        "by that amount. The count is disclosed above rather than back-filled.",
-        "- `In Transit` rows legitimately have no duration (the order was still moving at the data cut-off); "
-        "they are not a data-quality defect and are not logged.",
+        "- Nulled lags are unrecoverable. Affected orders stay in order counts, so count-based and "
+        "duration-based metrics have slightly different denominators by design; the counts are above.",
+        "- Primary seller and primary payment are attribution conventions, not facts. Any per-seller or "
+        f"per-payment-type cut inherits them for the {found['DQ-13']:,} multi-seller and "
+        f"{found['DQ-12']:,} multi-payment orders.",
+        "- The 'impossible sequence' rules assume the corroborated timestamp is the correct one. Where a "
+        "sequence is incoherent, the pipeline nulls the derived lag rather than guessing which field is wrong.",
+        f"- {found['DQ-04']:,} orders have no items, so order value, freight, category and seller are null "
+        "for them. Totals over those columns cover fewer orders than the order count.",
+        "- Geolocation is collapsed to the mean coordinate and the modal city and state per zip prefix, so it "
+        "locates a prefix, not an address.",
+        f"- Order dates span {orders['Purchase_Ts'].min():%Y-%m-%d} to {orders['Purchase_Ts'].max():%Y-%m-%d}. "
+        "The first and last months are partial and thin, so monthly trends should start and end inside the "
+        "dense middle of that window.",
         "",
     ]
     write_text(REPORTS / "data_quality_report.md", "\n".join(lines))
 
 
+def dimensions(raw):
+    customers = raw["customers"].rename(columns={
+        "customer_id": "Customer_ID", "customer_unique_id": "Customer_Unique_Id",
+        "customer_zip_code_prefix": "Customer_Zip_Prefix", "customer_city": "Customer_City",
+        "customer_state": "Customer_State"})
+    sellers = raw["sellers"].rename(columns={
+        "seller_id": "Seller_Id", "seller_zip_code_prefix": "Seller_Zip_Prefix",
+        "seller_city": "Seller_City", "seller_state": "Seller_State"})
+    products = (raw["products"]
+                .merge(source("product_category_name_translation", encoding="utf-8-sig"),
+                       on="product_category_name", how="left")
+                .rename(columns={"product_id": "Product_Id",
+                                 "product_category_name": "Product_Category_Pt",
+                                 "product_category_name_english": "Product_Category"})
+                [["Product_Id", "Product_Category_Pt", "Product_Category"]])
+    return customers, sellers, products
+
+
 def main():
-    orders_raw, verif_raw, deliveries_raw = read_raw()
-    manifest = json.loads(read_text(DATA_RAW / "dirty_data_manifest.json"))
     issues = IssueLog()
+    raw = {
+        "orders": read_orders(),
+        "order_items": source("olist_order_items_dataset", parse_dates=["shipping_limit_date"]),
+        "order_payments": source("olist_order_payments_dataset"),
+        "order_reviews": source("olist_order_reviews_dataset",
+                                parse_dates=["review_creation_date", "review_answer_timestamp"]),
+        "customers": source("olist_customers_dataset", **ZIP),
+        "sellers": source("olist_sellers_dataset", **ZIP),
+        "products": source("olist_products_dataset", usecols=["product_id", "product_category_name"]),
+        "geolocation": source("olist_geolocation_dataset", **ZIP),
+    }
 
-    orders = fix_cities(dedupe_orders(orders_raw, issues), issues)
-    valid_ids = set(orders["Order_ID"])
-    cancelled_ids = set(orders.loc[orders["Order_Status"] == "Cancelled", "Order_ID"])
+    orders = clean_orders(raw["orders"], issues)
+    items = clean_items(raw["order_items"], orders, issues)
+    payments = clean_payments(raw["order_payments"], orders, issues)
+    reviews = clean_reviews(raw["order_reviews"], orders, issues)
+    customers, sellers, products = dimensions(raw)
+    geo = clean_geolocation(raw["geolocation"], issues)
+    geo_dupes = len(raw["geolocation"]) - len(raw["geolocation"].drop_duplicates())
 
-    verif = clean_verification(drop_orphans(verif_raw.copy(), valid_ids, "prescription_verification", issues), issues)
-    deliveries, refund_fixes = clean_deliveries(
-        drop_orphans(deliveries_raw.copy(), valid_ids, "deliveries", issues), cancelled_ids, issues
-    )
-    orders.loc[orders["Order_ID"].isin(refund_fixes), "Order_Status"] = "Refunded"
-
-    expected, cascade = expected_counts(manifest, verif_raw, deliveries_raw)
+    expected = recount()
     found = issues.counts()
     if found != expected:
-        raise AssertionError(f"issue log does not reconcile with the manifest: found {found}, expected {expected}")
+        raise AssertionError(f"issue log disagrees with the recount: found {found}, expected {expected}")
+    if int(orders["Is_Sla_Eligible"].sum()) == 0:
+        raise AssertionError("no SLA-eligible orders survived cleaning")
 
     DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
-    write_csv(orders, DATA_PROCESSED / "orders.csv", sort_by="Order_ID")
-    write_csv(verif, DATA_PROCESSED / "prescription_verification.csv", sort_by="Order_ID")
-    write_csv(deliveries, DATA_PROCESSED / "deliveries.csv", sort_by="Order_ID")
+    tables = [
+        ("orders", orders, "Order_ID", "%.2f"),
+        ("order_items", items, ["Order_ID", "Order_Item_Id"], "%.2f"),
+        ("order_payments", payments, ["Order_ID", "Payment_Sequential"], "%.2f"),
+        ("order_reviews", reviews, "Order_ID", "%.2f"),
+        ("customers", customers, "Customer_ID", "%.2f"),
+        ("sellers", sellers, "Seller_Id", "%.2f"),
+        ("products", products, "Product_Id", "%.2f"),
+        ("geolocation", geo, "Zip_Prefix", "%.6f"),
+    ]
+    for name, frame, key, fmt in tables:
+        write_csv(frame, DATA_PROCESSED / f"{name}.csv", sort_by=key, float_format=fmt)
     write_csv(issues.frame(), DATA_PROCESSED / "dq_issue_log.csv")
 
-    write_report(orders_raw, verif_raw, deliveries_raw, orders, verif, deliveries, issues, expected, cascade)
-    log(f"cleaned orders {len(orders)} | prescription_verification {len(verif)} | deliveries {len(deliveries)}")
-    log(f"issue log {len(issues.rows)} rows, reconciles with the manifest across {len(expected)} rules")
+    write_report([(name, len(raw[name]), len(frame)) for name, frame, _, _ in tables],
+                 orders, issues, geo_dupes)
+
+    for name, frame, _, _ in tables:
+        log(f"{name}: {len(frame):,} rows")
+    log(f"issue log {len(issues.rows):,} rows across {len(found)} rules, matched against an independent recount")
 
 
 if __name__ == "__main__":

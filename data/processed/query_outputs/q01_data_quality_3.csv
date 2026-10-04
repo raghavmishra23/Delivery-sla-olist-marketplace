@@ -1,6 +1,9 @@
-Order_Status,Delivery_Status,Orders,Sla_Eligible
-Cancelled,No delivery row,205,0
-Completed,Delivered,2603,2587
-Completed,In Transit,19,0
-Refunded,Delivered,153,153
-Refunded,Returned,15,0
+Order_Status,Orders,With_Delivery_Ts,Sla_Eligible,On_Time,Late,On_Time_Pct
+delivered,96478,96470,96470,89936,6534,93.2300
+shipped,1107,0,0,0,0,
+canceled,625,6,0,0,0,
+unavailable,609,0,0,0,0,
+invoiced,314,0,0,0,0,
+processing,301,0,0,0,0,
+created,5,0,0,0,0,
+approved,2,0,0,0,0,
