@@ -57,6 +57,17 @@ def export_fact(con):
     log(f"fact_orders -> {FACT_EXPORT.name} ({len(fact):,} rows)")
 
 
+def enforce_gate():
+    """Query 01 only reports; this is what makes it a gate the build can actually fail on."""
+    checks = pd.read_csv(QUERY_OUTPUTS / "q01_data_quality.csv")
+    failed = checks[checks["Violations"] > 0]
+    if len(failed):
+        for row in failed.itertuples():
+            log(f"FAIL {row.Check_Name}: {row.Violations} violation(s)")
+        raise SystemExit(f"data-quality gate failed on {len(failed)} of {len(checks)} checks")
+    log(f"data-quality gate: {len(checks)} checks, 0 violations")
+
+
 def main():
     if not DB_PATH.exists():
         raise FileNotFoundError(f"{DB_PATH} is missing; run database/load_data.py first")
@@ -73,6 +84,7 @@ def main():
         # fact_orders check in 01 passes against an empty table. Replay it now that the mart exists.
         for name, rows in run_file(con, DQ_FILE):
             log(f"{DQ_FILE.name} -> {name} ({rows:,} rows, rechecked against the filled mart)")
+        enforce_gate()
     finally:
         con.close()
 

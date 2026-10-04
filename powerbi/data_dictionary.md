@@ -12,7 +12,6 @@ database/clean_data.py    15 DQ rules     -> data/processed/     + dq_issue_log.
 database/load_data.py                     -> database/olist.db
 sql/07_business_summary.sql               -> fact_orders table
 database/run_queries.py                   -> data/processed/fact_orders.csv
-                                          -> powerbi/data/fact_orders.csv
 ```
 
 `fact_orders` is the single reporting grain. Power BI, the Excel workbook and the HTML dashboard all read it, which is what keeps their numbers identical — verified by `database/reconcile.py`.
@@ -27,8 +26,8 @@ Grain: **one row per order**, 99,441 rows. No order is dropped by cleaning; rule
 |---|---|---|---|---|
 | 1 | `Order_ID` | text | no | Primary key |
 | 2 | `Customer_ID` | text | no | Per-order customer key |
-| 3 | `Customer_City` | text | yes | Free-text city name, 4,119 distinct |
-| 4 | `Customer_State` | text | yes | 2-letter Brazilian state code (UF), 27 distinct |
+| 3 | `Customer_City` | text | no | Free-text city name, 4,119 distinct |
+| 4 | `Customer_State` | text | no | 2-letter Brazilian state code (UF), 27 distinct |
 | 5 | `Order_Status` | text | no | `delivered` / `shipped` / `canceled` / `unavailable` / `invoiced` / `processing` / `created` / `approved` |
 | 6 | `Purchase_Ts` | datetime | no | Order placement. **The SLA clock starts here.** |
 | 7 | `Order_Month` | text | no | `YYYY-MM`, derived from `Purchase_Ts` |
