@@ -43,9 +43,6 @@ pip install -r requirements.txt     # pandas 3.0.6, numpy 2.5.3, openpyxl 3.1.5
 python run_all.py                       # everything, in order
 ```
 
-On Windows a bare `python` often resolves to the Microsoft Store alias stub; the `py` launcher or an
-explicit path to `python.exe` avoids that.
-
 | Script | Invocation | Reads | Writes | Arguments / environment | Exit behaviour |
 |---|---|---|---|---|---|
 | `run_all.py` | `python run_all.py` | — | — | none | Runs the seven steps below in order via `subprocess`, printing a banner and an elapsed time for each. `SystemExit` naming the script and its exit code on the first non-zero return |
