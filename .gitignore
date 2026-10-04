@@ -29,3 +29,5 @@ docs/overview-simple.md
 # Scratch renders and local experiments
 *.tmp
 scratch/
+
+NOTES.md
