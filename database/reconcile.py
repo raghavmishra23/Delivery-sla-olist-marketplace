@@ -14,6 +14,7 @@ PAYLOAD = ROOT / "dashboard" / "data" / "dashboard_data.js"
 # Counts must agree exactly; rates to 4 decimal places; hours to the second decimal.
 RATE_TOL = 5e-5
 HOUR_TOL = 0.005
+DASHBOARD_HOUR_TOL = 0.05
 
 KPIS = [
     ("Total orders", "count"),
@@ -95,8 +96,9 @@ def from_dashboard():
         return out
 
     flags = nums("flags", 1)
-    actual = nums("actual", 2)
-    promised = nums("promised", 2)
+    # The packer stores hours as value+1 so code 0 stays free for null; undo that here.
+    actual = [v - 1 if v else None for v in nums("actual", 2)]
+    promised = [v - 1 if v else None for v in nums("promised", 2)]
     delivered = [f & 1 for f in flags]
     eligible = [(f >> 1) & 1 for f in flags]
     on_time = [(f >> 2) & 1 for f in flags]
@@ -112,12 +114,17 @@ def from_dashboard():
     return kpis(frame)
 
 
-def agrees(a, b, kind):
+def agrees(a, b, kind, source=""):
     if a is None or b is None or pd.isna(a) or pd.isna(b):
         return False
     if kind == "count":
         return int(a) == int(b)
-    return abs(float(a) - float(b)) <= (RATE_TOL if kind == "rate" else HOUR_TOL)
+    if kind == "rate":
+        return abs(float(a) - float(b)) <= RATE_TOL
+    # The dashboard payload stores hours rounded to whole numbers, so its means land within a
+    # fraction of an hour rather than to the paisa. Compared, not exempted.
+    tol = DASHBOARD_HOUR_TOL if source == "Dashboard" else HOUR_TOL
+    return abs(float(a) - float(b)) <= tol
 
 
 def fmt(value, kind):
@@ -146,9 +153,7 @@ def main():
     failures = []
     for kpi, kind in KPIS:
         values = [sources[n].get(kpi) for n in names]
-        # The dashboard stores hours as rounded integers, so compare it on rates and counts only.
-        checked = [(n, v) for n, v in zip(names, values) if not (n == "Dashboard" and kind == "hours")]
-        ok = all(agrees(checked[0][1], v, kind) for _, v in checked[1:])
+        ok = all(agrees(values[0], v, kind, n) for n, v in zip(names[1:], values[1:]))
         if not ok:
             failures.append((kpi, dict(zip(names, values))))
         lines.append(kpi.ljust(width) + "".join(fmt(v, kind).rjust(16) for v in values)
