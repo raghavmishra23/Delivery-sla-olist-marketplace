@@ -1,0 +1,3 @@
+Route_Type,Sla_Eligible,Late,Late_Pct,Avg_Delivery_Hours,Avg_Promised_Hours,Avg_Transit_Hours,Share_Of_Eligible_Pct
+Cross state,61780,4971,8.0500,363.5700,652.6100,284.9900,64.0400
+Same state,34690,1563,4.5100,190.6700,421.9600,115.3500,35.9600

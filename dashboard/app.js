@@ -1,76 +1,160 @@
-const OTD_TARGET = 0.85;
-const MIN_N = 30;
-const BUCKET_ORDER = ["0-30", "31-60", "61-120", ">120", "Unknown"];
+const MIN_STATE_N = 30;
+const MIN_SELLER_N = 200;
 const NS = "http://www.w3.org/2000/svg";
 const THEME_KEY = "theme";
+const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const DELAY_BUCKETS = ["On time", "1–3 d late", "4–7 d late", "Over 7 d late"];
+
+// every column and dictionary the visuals read; checked at boot so a contract shift names itself
+const NEEDED_COLS = ["month", "cstate", "sstate", "category", "payment", "status",
+  "actual", "promised", "seller", "review", "flags"];
+const NEEDED_DICTS = ["month", "cstate", "sstate", "category", "payment", "status"];
 
 const board = document.getElementById("board");
 const tip = document.getElementById("tip");
 const token = name => getComputedStyle(document.documentElement).getPropertyValue("--" + name).trim();
 
-let rows = [];
+const D = {};
+const LEV = {};
 let months = [];
+let view = new Int32Array(0);
+let rowCount = 0;
+let ready = false;
 let firstPaint = true;
 let enterIndex = 0;
 
-function decode(payload) {
-  const { dicts, cols } = payload;
-  const str = (key, i) => (cols[key][i] < 0 ? null : dicts[key][cols[key][i]]);
-  return cols.month.map((_, i) => ({
-    month: str("month", i),
-    city: str("city", i),
-    tier: str("tier", i),
-    cat: str("cat", i),
-    ostatus: str("ostatus", i),
-    rxstatus: str("rxstatus", i),
-    bucket: str("bucket", i),
-    partner: str("partner", i),
-    dstatus: str("dstatus", i),
-    rx: cols.rx[i] === 1,
-    value: cols.value[i],
-    vmins: cols.vmins[i],
-    promised: cols.promised[i],
-    actual: cols.actual[i],
-    refund: cols.refund[i] === 1,
-    refundAmt: cols.refundAmt[i] || 0,
-    delivered: cols.delivered[i] === 1,
-    sla: cols.sla[i] === 1,
-    onTime: cols.onTime[i],
-    delay: cols.delay[i],
-  }));
+function checkPayload(p) {
+  if (!p || typeof p !== "object") {
+    throw new Error("window.FACT_ORDERS is not defined — data/dashboard_data.js did not load.");
+  }
+  if (!p.meta || !p.dicts || !p.cols) {
+    throw new Error("the payload is missing its meta, dicts or cols block.");
+  }
+  if (typeof p.meta.alpha !== "string" || !p.meta.alpha.length) {
+    throw new Error("the payload has no character alphabet in meta.alpha.");
+  }
+  const cols = NEEDED_COLS.filter(k => typeof p.cols[k] !== "string");
+  if (cols.length) {
+    throw new Error(`the payload has no ${cols.join(", ")} column${cols.length > 1 ? "s" : ""}. `
+      + "Rebuild it with build_dashboard_data.py.");
+  }
+  const dicts = NEEDED_DICTS.filter(k => !Array.isArray(p.dicts[k]));
+  if (dicts.length) {
+    throw new Error(`the payload is missing dictionaries for ${dicts.join(", ")}.`);
+  }
+  if (!p.cols.flags.length) throw new Error("the payload contains no rows.");
 }
 
-const rate = (a, b) => (b > 0 ? a / b : null);
-const sum = (list, f) => list.reduce((acc, r) => acc + (f(r) || 0), 0);
-const count = (list, f) => list.reduce((acc, r) => acc + (f(r) ? 1 : 0), 0);
-const mean = values => (values.length ? values.reduce((a, b) => a + b, 0) / values.length : null);
+/** Columns arrive as base-N character strings; code 0 means null in every column. */
+function decodeAll(p) {
+  const base = p.meta.alpha.length;
+  const code = new Int16Array(128);
+  for (let i = 0; i < base; i++) code[p.meta.alpha.charCodeAt(i)] = i;
 
-const pctText = v => (v == null ? "—" : (v * 100).toFixed(1) + "%");
+  const one = str => {
+    const out = new Uint8Array(str.length);
+    for (let i = 0; i < str.length; i++) out[i] = code[str.charCodeAt(i)];
+    return out;
+  };
+  const two = str => {
+    const n = str.length >> 1;
+    const out = new Uint16Array(n);
+    for (let i = 0; i < n; i++) out[i] = code[str.charCodeAt(2 * i)] * base + code[str.charCodeAt(2 * i + 1)];
+    return out;
+  };
+
+  NEEDED_DICTS.forEach(k => { LEV[k] = p.dicts[k]; D[k] = one(p.cols[k]); });
+  D.review = one(p.cols.review);
+  D.actual = two(p.cols.actual);
+  D.promised = two(p.cols.promised);
+  D.seller = two(p.cols.seller);
+
+  const flags = one(p.cols.flags);
+  rowCount = flags.length;
+  D.delivered = new Uint8Array(rowCount);
+  D.sla = new Uint8Array(rowCount);
+  D.onTime = new Uint8Array(rowCount);
+  for (let i = 0; i < rowCount; i++) {
+    D.delivered[i] = flags[i] & 1;
+    D.sla[i] = (flags[i] >> 1) & 1;
+    D.onTime[i] = (flags[i] >> 2) & 1;
+  }
+  months = LEV.month.slice().sort();
+}
+
+const hrs = (arr, i) => (arr[i] ? arr[i] - 1 : null);
+const pct = (a, b) => (b > 0 ? a / b : null);
+const pctText = (v, dp = 1) => (v == null ? "—" : (v * 100).toFixed(dp) + "%");
 const numText = (v, dp = 1) => (v == null ? "—" : v.toFixed(dp));
-const intText = v => v.toLocaleString("en-IN");
-const inrText = v => (v == null ? "—" : "₹" + Math.round(v).toLocaleString("en-IN"));
+const intText = v => (v == null ? "—" : Math.round(v).toLocaleString("en-US"));
+const dayText = v => (v == null ? "—" : v.toFixed(1) + " d");
+const monthLabel = m => `${MONTH_NAMES[+m.slice(5) - 1]} ${m.slice(0, 4)}`;
 
-const slaRows = list => list.filter(r => r.sla);
-const otdRate = list => { const e = slaRows(list); return rate(count(e, r => r.onTime === 1), e.length); };
-const breachRate = list => { const r = otdRate(list); return r == null ? null : 1 - r; };
-const avgHours = list => mean(slaRows(list).map(r => r.actual));
-const avgDelayLate = list => mean(list.filter(r => r.sla && r.onTime === 0).map(r => r.delay));
-// Returned orders can carry a refund but were never delivered, so they stay out of the rate
-// (they remain in the refund total) and the numerator stays a subset of the denominator.
-const refundRate = list => rate(count(list, r => r.refund && r.delivered), count(list, r => r.delivered));
-const rxCancelRate = list => {
-  const rx = list.filter(r => r.rx);
-  return rate(count(rx, r => r.ostatus === "Cancelled"), rx.length);
-};
+function otdStats(idx) {
+  let n = 0, on = 0;
+  for (let k = 0; k < idx.length; k++) {
+    const i = idx[k];
+    if (D.sla[i]) { n++; if (D.onTime[i]) on++; }
+  }
+  return { n, on, late: n - on, rate: pct(on, n) };
+}
+
+function meanHours(idx, arr) {
+  let sum = 0, n = 0;
+  for (let k = 0; k < idx.length; k++) {
+    const i = idx[k];
+    if (!D.sla[i]) continue;
+    const v = hrs(arr, i);
+    if (v != null) { sum += v; n++; }
+  }
+  return n ? sum / n : null;
+}
+
+function reviewStats(idx) {
+  const on = new Array(6).fill(0), late = new Array(6).fill(0);
+  let nOn = 0, nLate = 0, scored = 0, scoreSum = 0, low = 0;
+  for (let k = 0; k < idx.length; k++) {
+    const i = idx[k];
+    const s = D.review[i];
+    if (!s) continue;
+    scored++; scoreSum += s;
+    if (s <= 2) low++;
+    if (!D.sla[i]) continue;
+    if (D.onTime[i]) { on[s]++; nOn++; } else { late[s]++; nLate++; }
+  }
+  return { on, late, nOn, nLate, scored, avg: scored ? scoreSum / scored : null, lowRate: pct(low, scored) };
+}
+
+function delayBucket(i) {
+  if (!D.sla[i]) return -1;
+  if (D.onTime[i]) return 0;
+  const d = hrs(D.actual, i) - hrs(D.promised, i);
+  if (d <= 72) return 1;
+  if (d <= 168) return 2;
+  return 3;
+}
+
+function groupByCol(idx, col) {
+  const g = new Map();
+  for (let k = 0; k < idx.length; k++) {
+    const i = idx[k];
+    const c = col[i];
+    if (!c) continue;
+    let bucket = g.get(c);
+    if (!bucket) { bucket = []; g.set(c, bucket); }
+    bucket.push(i);
+  }
+  return g;
+}
 
 const filters = {};
 const selects = {
   from: document.getElementById("f-from"),
   to: document.getElementById("f-to"),
-  city: document.getElementById("f-city"),
-  cat: document.getElementById("f-cat"),
-  partner: document.getElementById("f-partner"),
-  rx: document.getElementById("f-rx"),
+  state: document.getElementById("f-state"),
+  category: document.getElementById("f-category"),
+  payment: document.getElementById("f-payment"),
+  status: document.getElementById("f-status"),
 };
 
 function options(select, values, allLabel) {
@@ -80,12 +164,12 @@ function options(select, values, allLabel) {
 }
 
 function buildFilters() {
-  options(selects.from, months);
-  options(selects.to, months);
-  options(selects.city, [...new Set(rows.map(r => r.city))].sort(), "All cities");
-  options(selects.cat, [...new Set(rows.map(r => r.cat))].sort(), "All categories");
-  options(selects.partner, [...new Set(rows.map(r => r.partner).filter(Boolean))].sort(), "All partners");
-  options(selects.rx, [{ label: "Rx required", value: "1" }, { label: "Non-Rx", value: "0" }], "All orders");
+  options(selects.from, months.map(m => ({ label: monthLabel(m), value: m })));
+  options(selects.to, months.map(m => ({ label: monthLabel(m), value: m })));
+  options(selects.state, LEV.cstate.slice().sort(), "All states");
+  options(selects.category, LEV.category.slice().sort(), "All categories");
+  options(selects.payment, LEV.payment.slice().sort(), "All payment types");
+  options(selects.status, LEV.status.slice().sort(), "All statuses");
   resetFilters();
   Object.values(selects).forEach(s => s.addEventListener("change", () => { readFilters(); scheduleRender(); }));
   document.getElementById("reset").addEventListener("click", () => { resetFilters(); scheduleRender(); });
@@ -94,7 +178,7 @@ function buildFilters() {
 function resetFilters() {
   selects.from.value = months[0];
   selects.to.value = months[months.length - 1];
-  ["city", "cat", "partner", "rx"].forEach(k => { selects[k].value = ""; });
+  ["state", "category", "payment", "status"].forEach(k => { selects[k].value = ""; });
   readFilters();
 }
 
@@ -104,30 +188,46 @@ function readFilters() {
   Object.entries(selects).forEach(([k, s]) => { filters[k] = s.value; });
 }
 
-function applyFilters() {
-  return rows.filter(r =>
-    r.month >= filters.from && r.month <= filters.to &&
-    (!filters.city || r.city === filters.city) &&
-    (!filters.cat || r.cat === filters.cat) &&
-    (!filters.partner || r.partner === filters.partner) &&
-    (!filters.rx || r.rx === (filters.rx === "1"))
-  );
+function codeOf(key, value) {
+  const at = LEV[key].indexOf(value);
+  return at < 0 ? -1 : at + 1;
 }
 
-function groupBy(list, key) {
-  const out = new Map();
-  list.forEach(r => {
-    const k = key(r);
-    if (k == null) return;
-    if (!out.has(k)) out.set(k, []);
-    out.get(k).push(r);
-  });
-  return out;
+function applyFilters() {
+  const from = LEV.month.indexOf(filters.from) + 1;
+  const to = LEV.month.indexOf(filters.to) + 1;
+  const wanted = {
+    cstate: filters.state ? codeOf("cstate", filters.state) : 0,
+    category: filters.category ? codeOf("category", filters.category) : 0,
+    payment: filters.payment ? codeOf("payment", filters.payment) : 0,
+    status: filters.status ? codeOf("status", filters.status) : 0,
+  };
+  // month codes follow the sorted dictionary, so a code range is the same as a date range
+  const lo = Math.min(from, to), hi = Math.max(from, to);
+  const out = new Int32Array(rowCount);
+  let n = 0;
+  for (let i = 0; i < rowCount; i++) {
+    const m = D.month[i];
+    if (!m || m < lo || m > hi) continue;
+    if (wanted.cstate && D.cstate[i] !== wanted.cstate) continue;
+    if (wanted.category && D.category[i] !== wanted.category) continue;
+    if (wanted.payment && D.payment[i] !== wanted.payment) continue;
+    if (wanted.status && D.status[i] !== wanted.status) continue;
+    out[n++] = i;
+  }
+  return out.subarray(0, n);
 }
 
 function el(tag, attrs = {}, text) {
   const node = document.createElementNS(NS, tag);
-  Object.entries(attrs).forEach(([k, v]) => node.setAttribute(k, v));
+  for (const k in attrs) if (attrs[k] != null) node.setAttribute(k, attrs[k]);
+  if (text != null) node.textContent = text;
+  return node;
+}
+
+function div(cls, text) {
+  const node = document.createElement("div");
+  node.className = cls;
   if (text != null) node.textContent = text;
   return node;
 }
@@ -137,7 +237,7 @@ function canvas(host, w, h) {
   const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, class: "chart", role: "img" });
   if (firstPaint) {
     svg.classList.add("enter");
-    svg.style.animationDelay = enterIndex++ * 35 + "ms";
+    svg.style.animationDelay = enterIndex++ * 30 + "ms";
   }
   host.append(svg);
   return svg;
@@ -151,374 +251,477 @@ function empty(host, msg = "No orders match the current filters.") {
   host.append(p);
 }
 
-function niceMax(value, steps = 4) {
-  if (!(value > 0)) return 1;
-  const mag = Math.pow(10, Math.floor(Math.log10(value / steps)));
-  const step = [1, 2, 2.5, 5, 10].find(m => m * mag >= value / steps) * mag;
-  return step * steps;
+function tile(id, { lab, value, note, chip, chipCls = "", big = false, tone = "" }) {
+  const host = document.getElementById(id);
+  host.replaceChildren();
+  host.append(div("lab", lab));
+  host.append(div(`${big ? "big" : "mid"} ${tone}`.trim(), value));
+  if (note) host.append(div("note", note));
+  if (chip) host.append(div("chip " + chipCls, chip));
+  if (firstPaint) host.classList.add("enter");
 }
 
-function yGrid(svg, box, max, fmt, steps = 4) {
-  for (let i = 0; i <= steps; i++) {
-    const v = (max / steps) * i;
-    const y = box.y + box.h - (v / max) * box.h;
-    svg.append(el("line", { class: "grid-line", x1: box.x, x2: box.x + box.w, y1: y, y2: y }));
-    svg.append(el("text", { class: "axis-text", x: box.x - 8, y: y + 4, "text-anchor": "end" }, fmt(v)));
-  }
-}
-
-function bar(attrs, tipText) {
-  return el("rect", { ...attrs, class: "bar " + attrs.class, "data-tip": tipText, rx: 3 });
-}
-
-function hBars(host, items, opts) {
-  if (!items.length) return empty(host);
-  const w = 640, labelW = opts.labelW || 130, rowH = 34;
-  const h = items.length * rowH + 14;
+/** Horizontal ranked rows: track, bar, label, value and sample size. Shared by every ranking tile. */
+function rankChart(host, rows, opts = {}) {
+  if (!rows.length) return empty(host);
+  const w = opts.w || 700;
+  const labelW = opts.labelW ?? 52;
+  const valueW = opts.valueW ?? 64;
+  const countW = opts.countW ?? 52;
+  const rowH = opts.rowH ?? 28;
+  const gap = opts.gap ?? 14;
+  const top = 6;
+  const h = rows.length * (rowH + gap) - gap + top + (opts.caption ? 22 : 6);
   const svg = canvas(host, w, h);
-  const barW = w - labelW - 78;
-  const max = Math.max(...items.map(d => d.value || 0), opts.min || 0) || 1;
+  const barW = w - labelW - valueW - countW;
+  const lo = opts.lo ?? 0;
+  const hi = opts.hi ?? (Math.max(...rows.map(d => d.value ?? 0), opts.min ?? 0) || 1);
 
-  items.forEach((d, i) => {
-    const y = i * rowH + 6;
-    svg.append(el("text", { class: "axis-text", x: 0, y: y + 13 }, d.label));
-    if (d.note) svg.append(el("text", { class: "axis-text", x: 0, y: y + 26, "font-size": "10" }, d.note));
-    svg.append(el("rect", { class: "track", x: labelW, y: y + 8, width: barW, height: 14, rx: 3 }));
-    svg.append(bar(
-      { class: d.cls, x: labelW, y: y + 8, width: Math.max(2, (d.value / max) * barW), height: 14 },
-      `${d.label}: ${opts.fmt(d.value)}${d.note ? " · " + d.note : ""}`
-    ));
-    svg.append(el("text", { class: "value-text", x: labelW + barW + 8, y: y + 19 }, opts.fmt(d.value)));
+  rows.forEach((d, i) => {
+    const y = top + i * (rowH + gap);
+    const frac = d.value == null ? 0 : (d.value - lo) / (hi - lo);
+    const fill = Math.max(4, Math.min(1, Math.max(0, frac)) * barW);
+    svg.append(el("rect", { class: "track-bar", x: labelW, y, width: barW, height: rowH, rx: 5 }));
+    svg.append(el("rect", {
+      class: "bar " + (d.cls || "bar-good"), x: labelW, y, width: fill, height: rowH, rx: 5,
+      opacity: d.thin ? 0.45 : 0.9,
+      "data-tip": `${d.label}: ${opts.fmt(d.value)}${d.n != null ? ` · n=${intText(d.n)}` : ""}`
+        + (d.thin ? " · below the ranking threshold" : ""),
+    }));
+    svg.append(el("text", { class: "row-label", x: labelW - 8, y: y + rowH / 2 + 4, "text-anchor": "end" }, d.label));
+    svg.append(el("text", { class: "value-text", x: labelW + fill + 9, y: y + rowH / 2 + 4 }, opts.fmt(d.value)));
+    if (d.n != null) {
+      svg.append(el("text", { class: "count-text", x: w - 4, y: y + rowH / 2 + 4, "text-anchor": "end" },
+        d.thin ? `n=${intText(d.n)} low` : intText(d.n)));
+    }
   });
 
-  if (opts.target != null) {
-    const x = labelW + (opts.target / max) * barW;
-    svg.append(el("line", { class: "target-line", x1: x, x2: x, y1: 2, y2: h - 8 }));
-  }
+  if (opts.caption) svg.append(el("text", { class: "caption-text", x: labelW, y: h - 6 }, opts.caption));
   return svg;
 }
 
-function vBars(host, items, opts) {
-  if (!items.length) return empty(host);
-  const w = 640, h = 280;
-  const box = { x: 46, y: 14, w: w - 60, h: h - 62 };
+/** Single-axis line. The y-floor is deliberately above zero: position encodes value, so this is safe. */
+function lineChart(host, points, opts = {}) {
+  if (points.length < 2) return empty(host, "Not enough months in range to draw a trend.");
+  const w = opts.w || 700, h = opts.h || 258, L = 40, R = 14, T = 12, B = 34;
   const svg = canvas(host, w, h);
-  const max = niceMax(Math.max(...items.map(d => d.value || 0)));
-  yGrid(svg, box, max, opts.axisFmt || opts.fmt);
+  const lo = opts.lo ?? 78, hi = opts.hi ?? 100;
+  const x = i => L + i * (w - L - R) / (points.length - 1);
+  const y = v => T + (hi - v) / (hi - lo) * (h - T - B);
 
-  const slot = box.w / items.length;
-  const barW = Math.min(46, slot * 0.5);
-  items.forEach((d, i) => {
-    const cx = box.x + slot * (i + 0.5);
-    const barH = ((d.value || 0) / max) * box.h;
-    svg.append(bar(
-      { class: d.cls, x: cx - barW / 2, y: box.y + box.h - barH, width: barW, height: Math.max(2, barH) },
-      `${d.label}: ${opts.fmt(d.value)}${d.note ? " · " + d.note : ""}`
-    ));
-    svg.append(el("text", { class: "value-text", x: cx, y: box.y + box.h - barH - 7, "text-anchor": "middle" }, opts.fmt(d.value)));
-    svg.append(el("text", { class: "axis-text", x: cx, y: box.y + box.h + 18, "text-anchor": "middle" }, d.label));
-    if (d.note) svg.append(el("text", { class: "axis-text", x: cx, y: box.y + box.h + 33, "text-anchor": "middle" }, d.note));
-  });
-  return svg;
-}
-
-function groupedBars(host, groups, series, opts) {
-  if (!groups.length) return empty(host);
-  const w = 640, h = 280;
-  const box = { x: 46, y: 14, w: w - 60, h: h - 56 };
-  const svg = canvas(host, w, h);
-  const max = niceMax(Math.max(...groups.flatMap(g => g.values.map(v => v || 0))));
-  yGrid(svg, box, max, opts.fmt);
-
-  const slot = box.w / groups.length;
-  const barW = Math.min(38, (slot * 0.62) / series.length);
-  groups.forEach((g, gi) => {
-    const centre = box.x + slot * (gi + 0.5);
-    g.values.forEach((v, si) => {
-      const x = centre + (si - (series.length - 1) / 2) * (barW + 6) - barW / 2;
-      const barH = ((v || 0) / max) * box.h;
-      svg.append(bar(
-        { class: series[si].cls, x, y: box.y + box.h - barH, width: barW, height: Math.max(2, barH) },
-        `${series[si].name} — ${g.label}: ${opts.fmt(v)}`
-      ));
-      svg.append(el("text", { class: "value-text", x: x + barW / 2, y: box.y + box.h - barH - 7, "text-anchor": "middle" }, opts.fmt(v)));
-    });
-    svg.append(el("text", { class: "axis-text", x: centre, y: box.y + box.h + 20, "text-anchor": "middle" }, g.label));
-  });
-  return svg;
-}
-
-function donut(host, onTime, late) {
-  const total = onTime + late;
-  if (!total) return empty(host, "No delivered orders with timing data.");
-  const w = 300, h = 230, r = 72, cx = w / 2, cy = h / 2 - 4, circ = 2 * Math.PI * r;
-  const svg = canvas(host, w, h);
-  const ring = (cls, len, offset, tipText) => el("circle", {
-    class: cls, cx, cy, r, "stroke-dasharray": `${len} ${circ - len}`,
-    "stroke-dashoffset": offset, transform: `rotate(-90 ${cx} ${cy})`, "data-tip": tipText,
-  });
-  const onLen = (onTime / total) * circ;
-  svg.append(ring("arc-pos", onLen, 0, `On time: ${intText(onTime)} (${pctText(onTime / total)})`));
-  svg.append(ring("arc-neg", circ - onLen, -onLen, `Late: ${intText(late)} (${pctText(late / total)})`));
-  svg.append(el("text", { x: cx, y: cy + 2, "text-anchor": "middle", class: "donut-value" }, pctText(onTime / total)));
-  svg.append(el("text", { x: cx, y: cy + 22, "text-anchor": "middle", class: "axis-text" }, "on time"));
-  svg.append(el("text", { x: cx, y: h - 8, "text-anchor": "middle", class: "axis-text" },
-    `${intText(onTime)} on time · ${intText(late)} late`));
-  return svg;
-}
-
-function comboChart(host, points) {
-  if (!points.length) return empty(host);
-  const w = 980, h = 300;
-  const box = { x: 52, y: 16, w: w - 112, h: h - 62 };
-  const svg = canvas(host, w, h);
-  const volMax = niceMax(Math.max(...points.map(p => p.volume)));
-  yGrid(svg, box, 1, v => (v * 100).toFixed(0) + "%");
-
-  const slot = box.w / points.length;
-  const barW = Math.min(44, slot * 0.42);
-  points.forEach((p, i) => {
-    const cx = box.x + slot * (i + 0.5);
-    const barH = (p.volume / volMax) * box.h;
-    svg.append(bar(
-      { class: "bar-mute", x: cx - barW / 2, y: box.y + box.h - barH, width: barW, height: Math.max(2, barH) },
-      `${p.label}: ${intText(p.volume)} orders · ${pctText(p.rate)} on time`
-    ));
-    svg.append(el("text", { class: "axis-text", x: cx, y: box.y + box.h + 18, "text-anchor": "middle" }, p.label));
+  (opts.ticks || [80, 90, 100]).forEach(g => {
+    svg.append(el("line", { class: "grid-line", x1: L, x2: w - R, y1: y(g), y2: y(g) }));
+    svg.append(el("text", { class: "axis-text", x: L - 8, y: y(g) + 4, "text-anchor": "end" }, g + "%"));
   });
 
-  for (let i = 0; i <= 4; i++) {
-    const y = box.y + box.h - (i / 4) * box.h;
-    svg.append(el("text", { class: "axis-text", x: box.x + box.w + 8, y: y + 4 }, intText(Math.round((volMax / 4) * i))));
-  }
-
-  const drawn = points.map((p, i) => ({ ...p, x: box.x + slot * (i + 0.5) })).filter(p => p.rate != null);
-  if (drawn.length) {
-    const y = p => box.y + box.h - p.rate * box.h;
-    svg.append(el("path", { class: "trend-line", d: drawn.map((p, i) => `${i ? "L" : "M"}${p.x} ${y(p)}`).join(" ") }));
-    drawn.forEach(p => {
-      svg.append(el("circle", { class: "trend-dot", cx: p.x, cy: y(p), r: 3.5, "data-tip": `${p.label}: ${pctText(p.rate)} on time` }));
-      svg.append(el("text", { class: "value-text", x: p.x, y: y(p) - 11, "text-anchor": "middle" }, pctText(p.rate)));
-    });
-  }
-  return svg;
-}
-
-function rgb(name) {
-  const n = parseInt(token(name).slice(1), 16);
-  return [n >> 16, (n >> 8) & 255, n & 255];
-}
-
-const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
-
-/** Red-to-green tint by rank, washed into the card surface; rebuilt per render so it follows the theme. */
-function heatScale() {
-  const base = rgb("surface"), lo = rgb("negative"), hi = rgb("accent");
-  return (t, strength) => `rgb(${mix(base, mix(lo, hi, t), strength).join(",")})`;
-}
-
-function renderMatrix(host, view) {
-  const cities = [...new Set(view.filter(r => r.city !== "Unknown").map(r => r.city))].sort();
-  const partners = [...new Set(view.map(r => r.partner).filter(Boolean))].sort();
-  if (!cities.length || !partners.length) {
-    document.getElementById("matrix-note").textContent = "";
-    return empty(host);
-  }
-
-  const cells = new Map();
-  cities.forEach(city => partners.forEach(partner => {
-    const e = view.filter(r => r.sla && r.city === city && r.partner === partner);
-    cells.set(city + "|" + partner, { n: e.length, rate: rate(count(e, r => r.onTime === 1), e.length) });
+  const tone = opts.tone || "good";
+  const drawn = points.map((p, i) => ({ ...p, x: x(i), y: y(p.value) }));
+  svg.append(el("path", {
+    class: "area-" + tone,
+    d: `M${drawn[0].x} ${h - B}` + drawn.map(p => `L${p.x} ${p.y}`).join("") + `L${drawn[drawn.length - 1].x} ${h - B}Z`,
   }));
+  svg.append(el("path", { class: "line-" + tone, d: drawn.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join("") }));
 
-  const rankable = [...cells.values()].filter(c => c.n >= MIN_N && c.rate != null).map(c => c.rate);
-  const lo = rankable.length ? Math.min(...rankable) : 0;
-  const hi = rankable.length ? Math.max(...rankable) : 1;
-  const tint = heatScale();
+  drawn.forEach((p, i) => {
+    const bad = opts.flagAbove != null ? p.value > opts.flagAbove : p.value < (opts.flagBelow ?? 90);
+    svg.append(el("circle", {
+      class: bad ? "dot-bad" : "dot-" + tone, cx: p.x, cy: p.y, r: bad ? 4.5 : 3,
+      "data-tip": `${p.tip}: ${opts.fmt(p.value)} · n=${intText(p.n)}`,
+    }));
+    if (bad) svg.append(el("text", { class: "flag-text", x: p.x, y: p.y + 18, "text-anchor": "middle" }, p.value.toFixed(1)));
+    if (i % opts.every === 0) {
+      svg.append(el("text", { class: "axis-text", x: p.x, y: h - 14, "text-anchor": "middle" }, p.label));
+    }
+  });
+  return svg;
+}
 
-  const table = document.createElement("table");
-  table.className = "matrix";
-  const head = table.insertRow();
-  head.append(Object.assign(document.createElement("th"), { className: "rowhead", textContent: "City" }));
-  partners.forEach(p => head.append(Object.assign(document.createElement("th"), { textContent: p })));
+/** Clustered columns with a shared y-scale. */
+function groupBars(host, groups, series, opts = {}) {
+  if (!groups.length) return empty(host);
+  const w = opts.w || 700, h = opts.h || 232, L = 38, R = 20, T = 6, B = 30;
+  const svg = canvas(host, w, h);
+  const max = opts.max ?? Math.max(1, ...groups.flatMap(g => g.values.map(v => v ?? 0))) * 1.08;
+  const y = v => T + (max - v) / max * (h - T - B);
 
-  cities.forEach(city => {
-    const tr = table.insertRow();
-    tr.append(Object.assign(document.createElement("td"), { className: "rowhead", textContent: city }));
-    partners.forEach(partner => {
-      const c = cells.get(city + "|" + partner);
-      const td = tr.insertCell();
-      if (!c.n) {
-        td.textContent = "—";
-        return;
-      }
-      const thin = c.n < MIN_N;
-      if (thin) td.className = "cell-thin";
-      const t = hi > lo ? Math.min(1, Math.max(0, (c.rate - lo) / (hi - lo))) : 1;
-      td.style.background = tint(t, thin ? 0.12 : 0.34);
-      td.setAttribute("data-tip", `${city} · ${partner}: ${pctText(c.rate)} on time, n=${c.n}`);
-      td.append(Object.assign(document.createElement("span"), { className: "cell-rate", textContent: pctText(c.rate) }));
-      td.append(Object.assign(document.createElement("span"), {
-        className: "cell-n", textContent: thin ? `n=${c.n} low` : `n=${c.n}`,
+  (opts.ticks || [0, 20, 40, 60]).forEach(g => {
+    svg.append(el("line", { class: "grid-line", x1: L, x2: w - R, y1: y(g), y2: y(g) }));
+    svg.append(el("text", { class: "axis-text", x: L - 8, y: y(g) + 4, "text-anchor": "end" }, opts.axisFmt(g)));
+  });
+
+  const slot = (w - L - R) / groups.length;
+  const bw = Math.min(22, slot * 0.34);
+  groups.forEach((g, gi) => {
+    const cx = L + gi * slot + slot / 2;
+    g.values.forEach((v, si) => {
+      const x = cx + (si - (series.length - 1) / 2) * (bw + 4) - bw / 2;
+      svg.append(el("rect", {
+        class: "bar " + series[si].cls, x, y: y(v ?? 0), width: bw, height: Math.max(2, (h - B) - y(v ?? 0)), rx: 4,
+        opacity: 0.9,
+        "data-tip": `${series[si].name} — ${g.label}: ${opts.fmt(v)}${g.n ? ` · n=${intText(g.n[si])}` : ""}`,
       }));
     });
+    svg.append(el("text", { class: "row-label", x: cx, y: h - 12, "text-anchor": "middle" }, g.label));
   });
 
-  host.replaceChildren(table);
-  const thin = [...cells.values()].filter(c => c.n && c.n < MIN_N).length;
-  document.getElementById("matrix-sub").textContent =
-    `${cities.length} cities × ${partners.length} partners · ${thin} of ${cells.size} cells below ${MIN_N} deliveries`;
-  document.getElementById("matrix-note").textContent =
-    `Cells under ${MIN_N} deliveries are marked low and left out of any best/worst claim: at that sample size ` +
-    `one late order moves the rate by ${pctText(1 / MIN_N)}.`;
+  if (opts.callout) {
+    svg.append(el("text", { class: "flag-text", x: L + slot / 2 + bw + 16, y: y(opts.callout.at) + 4 }, opts.callout.text));
+  }
+  return svg;
 }
 
-function renderKpis(view) {
-  const host = document.getElementById("kpis");
-  const delivered = count(view, r => r.delivered);
-  const refunds = count(view, r => r.refund);
-  const refundedDeliveries = count(view, r => r.refund && r.delivered);
-  const refundTotal = sum(view, r => r.refundAmt);
+function stateRows(idx, { metric, sort, limit, thinBelow = MIN_STATE_N, col = D.cstate, key = "cstate", cls }) {
+  const rows = [];
+  groupByCol(idx, col).forEach((group, code) => {
+    const m = metric(group);
+    if (m.value == null) return;
+    rows.push({ label: LEV[key][code - 1], value: m.value, n: m.n, thin: m.n < thinBelow });
+  });
+  rows.sort(sort);
+  const ranked = rows.filter(r => !r.thin);
+  const pool = limit ? (ranked.length >= limit ? ranked : rows) : rows;
+  const out = limit ? pool.slice(0, limit) : pool;
+  return out.map(r => ({ ...r, cls: typeof cls === "function" ? cls(r) : cls }));
+}
 
-  const cards = [
-    ["Total orders", intText(view.length), `${intText(count(view, r => r.ostatus === "Cancelled"))} cancelled, never dispatched`],
-    ["Delivered orders", intText(delivered), `${intText(slaRows(view).length)} with usable delivery timing`],
-    ["On-time rate", pctText(otdRate(view)), `breach ${pctText(breachRate(view))} · target ${pctText(OTD_TARGET)}`],
-    ["Avg delivery hours", numText(avgHours(view)), `avg delay when late ${numText(avgDelayLate(view))} h`],
-    ["Refund rate", pctText(refundRate(view)), `${intText(refundedDeliveries)} of ${intText(delivered)} delivered orders`],
-    ["Total refund value", inrText(refundTotal), refunds ? `${inrText(refundTotal / refunds)} per refunded order` : "no refunds in range"],
-  ];
+const otdMetric = group => { const s = otdStats(group); return { value: s.rate == null ? null : s.rate * 100, n: s.n }; };
+const lateMetric = group => { const s = otdStats(group); return { value: s.rate == null ? null : (1 - s.rate) * 100, n: s.n }; };
 
-  host.replaceChildren(...cards.map(([label, value, note], i) => {
-    const card = document.createElement("div");
-    card.className = "card kpi";
-    if (firstPaint) {
-      card.classList.add("enter");
-      card.style.animationDelay = i * 35 + "ms";
-    }
-    card.append(Object.assign(document.createElement("div"), { className: "label", textContent: label }));
-    card.append(Object.assign(document.createElement("div"), { className: "value", textContent: value }));
-    card.append(Object.assign(document.createElement("div"), { className: "delta", textContent: note }));
-    return card;
+function renderScope(idx) {
+  const s = otdStats(idx);
+  const seen = new Uint8Array(LEV.month.length + 1);
+  for (let k = 0; k < idx.length; k++) seen[D.month[idx[k]]] = 1;
+  const sorted = LEV.month.filter((_, i) => seen[i + 1]).sort();
+  document.getElementById("scope").textContent = idx.length
+    ? `${intText(s.n)} eligible orders of ${intText(idx.length)} in range · `
+      + (sorted.length ? `${monthLabel(sorted[0])} – ${monthLabel(sorted[sorted.length - 1])}` : "")
+    : "No orders match the current filters";
+}
+
+function renderOverview(idx) {
+  const s = otdStats(idx);
+  const actual = meanHours(idx, D.actual);
+  const promised = meanHours(idx, D.promised);
+  const rev = reviewStats(idx);
+  const oneLate = pct(rev.late[1], rev.nLate);
+  const oneOn = pct(rev.on[1], rev.nOn);
+
+  tile("k-otd", {
+    lab: "On-time delivery rate", big: true, tone: "good", value: pctText(s.rate),
+    note: s.n ? `${intText(s.on)} of ${intText(s.n)} arrived by the promised date · ${intText(s.late)} did not`
+      : "No eligible orders in this selection",
+  });
+  tile("k-speed", {
+    lab: "Avg delivery", value: actual == null ? "—" : dayText(actual / 24),
+    note: promised == null ? null : `promise averages ${dayText(promised / 24)}`,
+    chip: actual != null && promised != null ? `${dayText((promised - actual) / 24)} of headroom` : null,
+  });
+  tile("k-onestar", {
+    lab: "1★ share when late", value: pctText(oneLate), tone: "bad",
+    note: oneOn == null ? null : `${pctText(oneOn)} when on time`,
+    chip: oneLate != null && oneOn ? `${(oneLate / oneOn).toFixed(0)}× more likely` : null,
+    chipCls: "bad",
+  });
+
+  const trend = monthSeries(idx, g => otdStats(g), p => p.rate == null ? null : p.rate * 100);
+  lineChart(document.getElementById("c-trend"), trend, {
+    fmt: v => v.toFixed(1) + "%", every: Math.max(1, Math.ceil(trend.length / 6)),
+  });
+
+  const worst = stateRows(idx, { metric: otdMetric, sort: (a, b) => a.value - b.value, limit: 5, cls: "bar-bad" });
+  const best = stateRows(idx, { metric: otdMetric, sort: (a, b) => b.value - a.value, limit: 5, cls: "bar-good" });
+  const sub = `${MIN_STATE_N}+ eligible orders to rank · n shown`;
+  document.getElementById("s-worst").textContent = sub;
+  document.getElementById("s-best").textContent = sub;
+  const stateOpts = { w: 330, fmt: v => v.toFixed(1) + "%", lo: 78, hi: 100, labelW: 34, valueW: 50, countW: 46 };
+  rankChart(document.getElementById("c-worst"), worst, stateOpts);
+  rankChart(document.getElementById("c-best"), best, stateOpts);
+
+  renderReviewSplit(document.getElementById("c-review"), rev);
+
+  const sellers = sellerRows(idx);
+  const ranked = sellers.filter(r => !r.thin);
+  const ends = ranked.length >= 6
+    ? [...ranked.slice(0, 3), ...ranked.slice(-3)]
+    : ranked;
+  document.getElementById("s-sellers").textContent = ranked.length
+    ? `Sellers with ${MIN_SELLER_N}+ eligible orders · best and worst three of ${intText(ranked.length)}`
+    : `No seller reaches ${MIN_SELLER_N} eligible orders in this selection`;
+  rankChart(document.getElementById("c-sellers"), ends.map(r => ({ ...r, cls: r.value > 10 ? "bar-bad" : "bar-good" })), {
+    fmt: v => v.toFixed(2) + "%", labelW: 76, rowH: 26, gap: 12,
+    caption: ends.length >= 6 && ends[0].value > 0
+      ? `${(ends[ends.length - 1].value / ends[0].value).toFixed(0)}× spread between the best and worst seller at comparable volume.`
+      : null,
+  });
+}
+
+function renderReviewSplit(host, rev) {
+  if (!rev.nOn && !rev.nLate) return empty(host, "No reviewed orders in this selection.");
+  const groups = [1, 2, 3, 4, 5].map(s => ({
+    label: s + "★",
+    values: [pct(rev.on[s], rev.nOn), pct(rev.late[s], rev.nLate)].map(v => (v == null ? null : v * 100)),
+    n: [rev.nOn, rev.nLate],
   }));
-}
-
-function renderExec(view) {
-  const e = slaRows(view);
-  donut(document.getElementById("c-split"), count(e, r => r.onTime === 1), count(e, r => r.onTime === 0));
-
-  const unknown = count(view, r => r.city === "Unknown");
-  const byCity = [...groupBy(view.filter(r => r.city !== "Unknown"), r => r.city)]
-    .map(([city, list]) => ({ city, n: slaRows(list).length, rate: otdRate(list) }))
-    .filter(d => d.rate != null)
-    .sort((a, b) => b.rate - a.rate);
-
-  document.getElementById("city-sub").textContent =
-    `Sorted best to worst. Dashed line is the ${pctText(OTD_TARGET)} target. ` +
-    `${intText(unknown)} orders with an unknown city are counted in the KPIs but cannot be ranked here.`;
-
-  hBars(document.getElementById("c-city"), byCity.map(d => ({
-    label: d.city,
-    value: d.rate,
-    note: d.n < MIN_N ? `n=${d.n} low` : `n=${d.n}`,
-    cls: d.rate >= OTD_TARGET ? "bar-pos" : "bar-neg",
-  })), { fmt: pctText, min: 1, target: OTD_TARGET, labelW: 150 });
-
-  const trend = months.filter(m => m >= filters.from && m <= filters.to).map(m => {
-    const list = view.filter(r => r.month === m);
-    return { label: m.slice(5) + " " + m.slice(2, 4), volume: list.length, rate: otdRate(list) };
+  groupBars(host, groups, [{ name: "On time", cls: "bar-good" }, { name: "Late", cls: "bar-bad" }], {
+    fmt: v => (v == null ? "—" : v.toFixed(1) + "%"), axisFmt: v => v + "%", max: 65,
+    callout: rev.nLate ? { at: pct(rev.late[1], rev.nLate) * 100, text: `${pctText(pct(rev.late[1], rev.nLate))} of late orders are 1★` } : null,
   });
-  comboChart(document.getElementById("c-trend"), trend);
 }
 
-function renderOps(view) {
-  const byPartner = [...groupBy(view, r => r.partner)]
-    .map(([partner, list]) => ({ partner, n: slaRows(list).length, rate: breachRate(list) }))
-    .filter(d => d.rate != null)
-    .sort((a, b) => b.rate - a.rate);
+function monthSeries(idx, metric, pick) {
+  const out = [];
+  groupByCol(idx, D.month).forEach((group, code) => {
+    const m = metric(group);
+    const value = pick(m);
+    if (value == null || m.n < MIN_STATE_N) return;
+    out.push({ code, label: LEV.month[code - 1].slice(2), tip: monthLabel(LEV.month[code - 1]), value, n: m.n });
+  });
+  return out.sort((a, b) => a.code - b.code);
+}
 
-  hBars(document.getElementById("c-partner"), byPartner.map(d => ({
-    label: d.partner,
-    value: d.rate,
-    note: d.n < MIN_N ? `n=${d.n} low` : `n=${d.n}`,
-    cls: d.n < MIN_N ? "bar-mute" : "bar-neg",
-  })), { fmt: pctText, min: 0.3, labelW: 160 });
+function sellerRows(idx) {
+  const rows = [];
+  groupByCol(idx, D.seller).forEach((group, code) => {
+    const s = otdStats(group);
+    if (s.rate == null) return;
+    rows.push({ label: `#${code}`, value: (1 - s.rate) * 100, n: s.n, thin: s.n < MIN_SELLER_N });
+  });
+  return rows.sort((a, b) => a.value - b.value);
+}
 
-  renderMatrix(document.getElementById("c-matrix"), view);
+function renderSellers(idx) {
+  const sellers = sellerRows(idx);
+  const ranked = sellers.filter(r => !r.thin);
+  const lateRates = ranked.map(r => r.value).sort((a, b) => a - b);
+  const median = lateRates.length
+    ? (lateRates.length % 2
+      ? lateRates[(lateRates.length - 1) / 2]
+      : (lateRates[lateRates.length / 2 - 1] + lateRates[lateRates.length / 2]) / 2)
+    : null;
 
-  const rxView = view.filter(r => r.rx);
-  const buckets = BUCKET_ORDER
-    .map(b => {
-      const list = rxView.filter(r => r.bucket === b);
-      return { label: b === "Unknown" ? "Unknown" : b + " min", n: slaRows(list).length, rate: breachRate(list) };
-    })
-    .filter(d => d.n > 0);
+  tile("k-spread", {
+    lab: "Best to worst seller", big: true,
+    value: lateRates.length >= 2 && lateRates[0] > 0 ? `${(lateRates[lateRates.length - 1] / lateRates[0]).toFixed(0)}×` : "—",
+    note: lateRates.length >= 2
+      ? `late rate runs ${lateRates[0].toFixed(2)}% to ${lateRates[lateRates.length - 1].toFixed(2)}% across sellers at comparable volume`
+      : `Fewer than two sellers reach ${MIN_SELLER_N} eligible orders here`,
+  });
+  tile("k-ranked", {
+    lab: "Sellers ranked", value: intText(ranked.length),
+    note: `of ${intText(sellers.length)} with any eligible order`,
+    chip: `${MIN_SELLER_N}+ orders to qualify`, chipCls: "flat",
+  });
+  tile("k-median", {
+    lab: "Median seller late rate", value: median == null ? "—" : median.toFixed(2) + "%",
+    note: ranked.length ? `across the ${intText(ranked.length)} ranked sellers` : null,
+  });
 
-  vBars(document.getElementById("c-bucket"), buckets.map(d => ({
-    label: d.label,
-    value: d.rate,
-    note: d.n < MIN_N ? `n=${d.n} low` : `n=${d.n}`,
-    cls: d.n < MIN_N ? "bar-mute" : "bar-neg",
-  })), { fmt: pctText, axisFmt: v => (v * 100).toFixed(0) + "%" });
+  const opts = { fmt: v => v.toFixed(2) + "%", labelW: 64, rowH: 26, gap: 12 };
+  const worst = ranked.slice(-8).reverse();
+  const best = ranked.slice(0, 8);
+  document.getElementById("s-worstsell").textContent = ranked.length
+    ? `Worst ${worst.length} of ${intText(ranked.length)} qualifying sellers` : "";
+  document.getElementById("s-bestsell").textContent = ranked.length
+    ? `Best ${best.length} of ${intText(ranked.length)} qualifying sellers` : "";
+  rankChart(document.getElementById("c-worstsell"), worst.map(r => ({ ...r, cls: "bar-bad" })), opts);
+  rankChart(document.getElementById("c-bestsell"), best.map(r => ({ ...r, cls: "bar-good" })), opts);
 
-  const chronic = view.filter(r => r.cat === "Chronic");
-  const otc = view.filter(r => r.cat === "OTC");
-  const metrics = [
-    ["On-time rate", otdRate],
-    ["Refund rate", refundRate],
-    ["Rx cancellation rate", rxCancelRate],
-  ];
-  groupedBars(
-    document.getElementById("c-cat"),
-    metrics.map(([label, fn]) => ({ label, values: [fn(chronic), fn(otc)] })),
-    [{ name: "Chronic", cls: "bar-pos" }, { name: "OTC", cls: "bar-mute" }],
-    { fmt: pctText }
-  );
-  legend(document.getElementById("c-cat"), [
-    ["pos", `Chronic (${intText(chronic.length)} orders)`],
-    ["mute", `OTC (${intText(otc.length)} orders)`],
-  ]);
+  rankChart(document.getElementById("c-sellerstate"), stateRows(idx, {
+    metric: lateMetric, sort: (a, b) => b.value - a.value, col: D.sstate, key: "sstate",
+    cls: r => (r.value > 10 ? "bar-bad" : "bar-good"),
+  }), { fmt: v => v.toFixed(1) + "%", labelW: 44, rowH: 22, gap: 9 });
 
-  const refundBy = (key, host, muteUnknown) => {
-    const items = [...groupBy(view.filter(r => r.refund), key)]
-      .map(([label, list]) => ({ label, value: sum(list, r => r.refundAmt), n: list.length }))
-      .sort((a, b) => b.value - a.value);
-    hBars(document.getElementById(host), items.map(d => ({
-      label: d.label,
-      value: d.value,
-      note: `${intText(d.n)} refunds`,
-      cls: muteUnknown && d.label === "Unknown" ? "bar-mute" : "bar-neg",
-    })), { fmt: inrText, labelW: 160 });
+  renderCrossState(idx);
+}
+
+function renderCrossState(idx) {
+  const same = [], cross = [];
+  for (let k = 0; k < idx.length; k++) {
+    const i = idx[k];
+    if (!D.sla[i] || !D.sstate[i] || !D.cstate[i]) continue;
+    (LEV.sstate[D.sstate[i] - 1] === LEV.cstate[D.cstate[i] - 1] ? same : cross).push(i);
+  }
+  const a = otdStats(same), b = otdStats(cross);
+  const groups = [
+    { label: "Same state", values: [a.rate == null ? null : a.rate * 100], n: [a.n] },
+    { label: "Different state", values: [b.rate == null ? null : b.rate * 100], n: [b.n] },
+  ].filter(g => g.values[0] != null);
+  groupBars(document.getElementById("c-crossstate"), groups, [{ name: "On-time rate", cls: "bar-good" }], {
+    fmt: v => (v == null ? "—" : v.toFixed(1) + "%"), axisFmt: v => v + "%", max: 108,
+    ticks: [0, 25, 50, 75, 100], h: 258,
+  });
+}
+
+function renderGeo(idx) {
+  const all = stateRows(idx, { metric: otdMetric, sort: (a, b) => b.value - a.value });
+  const ranked = all.filter(r => !r.thin);
+  const top = ranked[0], bottom = ranked[ranked.length - 1];
+  const biggest = [...all].sort((a, b) => b.n - a.n)[0];
+  const totalN = all.reduce((acc, r) => acc + r.n, 0);
+
+  tile("k-gap", {
+    lab: "Best to worst state", big: true,
+    value: top && bottom ? `${(top.value - bottom.value).toFixed(1)} pp` : "—",
+    note: top && bottom
+      ? `${top.label} at ${top.value.toFixed(1)}% against ${bottom.label} at ${bottom.value.toFixed(1)}% · ${MIN_STATE_N}+ orders each`
+      : "Not enough states clear the sample threshold",
+  });
+  tile("k-states", {
+    lab: "States in range", value: intText(all.length),
+    note: `${intText(ranked.length)} clear the ${MIN_STATE_N}-order bar for ranking`,
+  });
+  tile("k-concentration", {
+    lab: "Largest state share", value: biggest ? pctText(pct(biggest.n, totalN)) : "—",
+    note: biggest ? `${biggest.label} alone, ${intText(biggest.n)} eligible orders` : null,
+  });
+
+  document.getElementById("s-allstates").textContent =
+    `All ${intText(all.length)} states, best first · rows under ${MIN_STATE_N} orders are marked and excluded from ranking claims`;
+  rankChart(document.getElementById("c-allstates"), all.map(r => ({
+    ...r, cls: r.value >= 93 ? "bar-good" : r.value >= 88 ? "bar-mute" : "bar-bad",
+  })), { fmt: v => v.toFixed(1) + "%", lo: 70, hi: 100, labelW: 42, rowH: 20, gap: 8 });
+
+  const days = state => {
+    const v = meanHours(state, D.actual);
+    return { value: v == null ? null : v / 24, n: otdStats(state).n };
   };
-  refundBy(r => r.city, "c-refund-city", true);
-  refundBy(r => r.partner, "c-refund-partner", false);
+  const slow = stateRows(idx, { metric: days, sort: (a, b) => b.value - a.value, limit: 5, cls: "bar-bad" });
+  const fast = stateRows(idx, { metric: days, sort: (a, b) => a.value - b.value, limit: 5, cls: "bar-good" });
+  const dayOpts = { w: 330, fmt: v => (v == null ? "—" : v.toFixed(1) + " d"), labelW: 34, valueW: 52, countW: 46 };
+  rankChart(document.getElementById("c-slowest"), slow, dayOpts);
+  rankChart(document.getElementById("c-fastest"), fast, dayOpts);
+
+  const vol = stateRows(idx, {
+    metric: g => { const s = otdStats(g); return { value: s.n ? s.late : null, n: s.n }; },
+    sort: (a, b) => b.value - a.value, limit: 10, thinBelow: 0, cls: "bar-bad",
+  });
+  rankChart(document.getElementById("c-latevol"), vol, { fmt: intText, labelW: 44, rowH: 22, gap: 9 });
+
+  const headroom = stateRows(idx, {
+    metric: g => {
+      const a = meanHours(g, D.actual), p = meanHours(g, D.promised);
+      return { value: a == null || p == null ? null : (p - a) / 24, n: otdStats(g).n };
+    },
+    sort: (a, b) => a.value - b.value, limit: 10,
+    cls: r => (r.value < 7 ? "bar-bad" : "bar-good"),
+  });
+  rankChart(document.getElementById("c-headroom"), headroom, {
+    fmt: v => (v == null ? "—" : v.toFixed(1) + " d"), labelW: 44, rowH: 22, gap: 9,
+    caption: "Tightest promises first — less headroom leaves less room for a delay to stay inside the promise.",
+  });
 }
 
-function legend(host, entries) {
-  const box = document.createElement("div");
-  box.className = "legend";
-  entries.forEach(([cls, text]) => {
-    const item = document.createElement("span");
-    item.append(Object.assign(document.createElement("i"), { className: "swatch " + cls }));
-    item.append(document.createTextNode(text));
-    box.append(item);
+function renderReviews(idx) {
+  const rev = reviewStats(idx);
+  let eligible = 0;
+  for (let k = 0; k < idx.length; k++) if (D.sla[idx[k]]) eligible++;
+
+  tile("k-lowrev", {
+    lab: "Low review rate", big: true, value: pctText(rev.lowRate),
+    note: rev.scored
+      ? `${intText(rev.scored)} reviewed orders scoring 1★ or 2★ · orders without a review are left out, not counted as zero`
+      : "No reviewed orders in this selection",
   });
-  host.append(box);
+  tile("k-avgscore", {
+    lab: "Average score", value: rev.avg == null ? "—" : rev.avg.toFixed(2),
+    note: rev.scored ? `over ${intText(rev.scored)} reviews` : null,
+  });
+  tile("k-noreview", {
+    lab: "Orders without a review", value: pctText(pct(idx.length - rev.scored, idx.length)),
+    note: `${intText(idx.length - rev.scored)} of ${intText(idx.length)} orders in range`,
+  });
+
+  const lowTrend = monthSeries(idx,
+    g => { const r = reviewStats(g); return { rate: r.lowRate, n: r.scored }; },
+    m => (m.rate == null ? null : m.rate * 100));
+  lineChart(document.getElementById("c-lowtrend"), lowTrend, {
+    fmt: v => v.toFixed(1) + "%", every: Math.max(1, Math.ceil(lowTrend.length / 6)),
+    lo: 0, hi: 60, ticks: [0, 20, 40, 60], tone: "bad", flagAbove: 25,
+  });
+
+  const byDelay = DELAY_BUCKETS.map((label, b) => {
+    let scored = 0, low = 0;
+    for (let k = 0; k < idx.length; k++) {
+      const i = idx[k];
+      if (delayBucket(i) !== b || !D.review[i]) continue;
+      scored++;
+      if (D.review[i] <= 2) low++;
+    }
+    return { label, values: [pct(low, scored) == null ? null : pct(low, scored) * 100], n: [scored] };
+  }).filter(g => g.n[0] > 0);
+  groupBars(document.getElementById("c-bydelay"), byDelay, [{ name: "Low review rate", cls: "bar-bad" }], {
+    fmt: v => (v == null ? "—" : v.toFixed(1) + "%"), axisFmt: v => v + "%", max: 85,
+    ticks: [0, 20, 40, 60, 80], h: 258,
+  });
+
+  const mix = [1, 2, 3, 4, 5].map(s => {
+    const n = rev.on[s] + rev.late[s];
+    return { label: s + "★", values: [pct(n, rev.nOn + rev.nLate) == null ? null : pct(n, rev.nOn + rev.nLate) * 100], n: [n] };
+  });
+  groupBars(document.getElementById("c-mix"), rev.nOn + rev.nLate ? mix : [],
+    [{ name: "Share of reviews", cls: "bar-mute" }], {
+      fmt: v => (v == null ? "—" : v.toFixed(1) + "%"), axisFmt: v => v + "%", max: 70,
+      ticks: [0, 20, 40, 60], h: 258,
+    });
+
+  document.getElementById("s-lowstate").textContent =
+    `Worst 10 states by share of 1★ and 2★ reviews · ${MIN_STATE_N}+ orders to rank`;
+  rankChart(document.getElementById("c-lowstate"), stateRows(idx, {
+    metric: g => { const r = reviewStats(g); return { value: r.lowRate == null ? null : r.lowRate * 100, n: r.scored }; },
+    sort: (a, b) => b.value - a.value, limit: 10, cls: "bar-bad",
+  }), { fmt: v => v.toFixed(1) + "%", labelW: 44, rowH: 22, gap: 9 });
+}
+
+const PAGES = {
+  overview: {
+    render: renderOverview,
+    tiles: [["k-otd", "On-time delivery rate", true], ["k-speed", "Avg delivery"], ["k-onestar", "1★ share when late"]],
+    plots: ["c-trend", "c-worst", "c-best", "c-review", "c-sellers"],
+  },
+  sellers: {
+    render: renderSellers,
+    tiles: [["k-spread", "Best to worst seller", true], ["k-ranked", "Sellers ranked"], ["k-median", "Median seller late rate"]],
+    plots: ["c-worstsell", "c-bestsell", "c-sellerstate", "c-crossstate"],
+  },
+  geo: {
+    render: renderGeo,
+    tiles: [["k-gap", "Best to worst state", true], ["k-states", "States in range"], ["k-concentration", "Largest state share"]],
+    plots: ["c-allstates", "c-slowest", "c-fastest", "c-latevol", "c-headroom"],
+  },
+  reviews: {
+    render: renderReviews,
+    tiles: [["k-lowrev", "Low review rate", true], ["k-avgscore", "Average score"], ["k-noreview", "Orders without a review"]],
+    plots: ["c-lowtrend", "c-bydelay", "c-mix", "c-lowstate"],
+  },
+};
+
+let active = "overview";
+const stale = new Set();
+
+function drawPage(name) {
+  const page = PAGES[name];
+  try {
+    if (!view.length) {
+      page.tiles.forEach(([id, lab, big]) => tile(id, { lab, value: "—", big: !!big }));
+      page.plots.forEach(id => empty(document.getElementById(id)));
+      return;
+    }
+    page.render(view);
+  } catch (err) {
+    // a failed tab must not leave shimmering placeholders behind
+    page.tiles.forEach(([id, lab, big]) => tile(id, { lab, value: "—", big: !!big }));
+    page.plots.forEach(id => empty(document.getElementById(id), "This view could not be drawn: "
+      + (err && err.message ? err.message : String(err))));
+  }
 }
 
 function render() {
   enterIndex = 0;
-  const view = applyFilters();
-  if (!view.length) {
-    renderKpis(view);
-    ["c-split", "c-city", "c-trend", "c-partner", "c-matrix", "c-bucket", "c-cat", "c-refund-city", "c-refund-partner"]
-      .forEach(id => empty(document.getElementById(id)));
-    ["city-sub", "matrix-sub", "matrix-note"].forEach(id => { document.getElementById(id).textContent = ""; });
-    return;
-  }
-  renderKpis(view);
-  renderExec(view);
-  renderOps(view);
+  view = applyFilters();
+  renderScope(view);
+  stale.clear();
+  Object.keys(PAGES).forEach(name => { if (name !== active) stale.add(name); });
+  drawPage(active);
 }
 
 /** Yield a frame so the busy wash can paint when the recompute is slow; fast ones resolve unseen. */
@@ -530,26 +733,18 @@ function scheduleRender() {
   });
 }
 
-function moveInk(tab) {
-  const ink = document.querySelector(".tab-ink");
-  ink.style.width = tab.offsetWidth + "px";
-  ink.style.transform = `translateX(${tab.offsetLeft}px)`;
-}
-
 function wireTabs() {
-  const pairs = [["tab-exec", "page-exec"], ["tab-ops", "page-ops"]];
-  pairs.forEach(([tabId, pageId]) => {
-    document.getElementById(tabId).addEventListener("click", () => {
-      pairs.forEach(([t, p]) => {
-        const active = t === tabId;
-        document.getElementById(t).setAttribute("aria-selected", String(active));
-        document.getElementById(p).hidden = !active;
+  Object.keys(PAGES).forEach(name => {
+    document.getElementById("tab-" + name).addEventListener("click", () => {
+      active = name;
+      Object.keys(PAGES).forEach(other => {
+        const on = other === name;
+        document.getElementById("tab-" + other).setAttribute("aria-selected", String(on));
+        document.getElementById("page-" + other).hidden = !on;
       });
-      moveInk(document.getElementById(tabId));
+      if (stale.has(name)) { drawPage(name); stale.delete(name); }
     });
   });
-  moveInk(document.getElementById("tab-exec"));
-  window.addEventListener("resize", () => moveInk(document.querySelector('.tab[aria-selected="true"]')));
 }
 
 function setTheme(mode, repaint = true) {
@@ -560,8 +755,7 @@ function setTheme(mode, repaint = true) {
   try {
     localStorage.setItem(THEME_KEY, mode);
   } catch (e) { /* blocked storage: the choice just lasts for this view */ }
-  // the matrix heat tint is mixed in JS, so it only follows the theme if the cells are redrawn
-  if (repaint) render();
+  if (repaint && ready) render();
 }
 
 function wireTheme() {
@@ -592,17 +786,34 @@ function wireTips() {
   });
 }
 
+/** A skeleton is never a terminal state: if boot throws, the placeholders are replaced by this. */
+function showError(reason) {
+  board.replaceChildren();
+  const panel = div("t error");
+  panel.append(div("lab", "Data unavailable"));
+  panel.append(div("mid", "Could not load the data file"));
+  panel.append(div("note", reason));
+  panel.append(div("note", "Rebuild it with: python dashboard/build_dashboard_data.py"));
+  board.append(panel);
+  document.getElementById("scope").textContent = "";
+}
+
 function boot() {
-  rows = decode(window.FACT_ORDERS);
-  months = [...new Set(rows.map(r => r.month))].sort();
-  buildFilters();
-  wireTabs();
   wireTheme();
-  wireTips();
-  render();
-  firstPaint = false;
+  try {
+    checkPayload(window.FACT_ORDERS);
+    decodeAll(window.FACT_ORDERS);
+    buildFilters();
+    wireTabs();
+    wireTips();
+    render();
+    ready = true;
+    firstPaint = false;
+  } catch (err) {
+    showError(err && err.message ? err.message : String(err));
+  }
 }
 
 // Two frames: the deferred scripts leave the skeleton markup on screen, and this lets it paint once
-// before the decode and the nine chart builds take the main thread.
+// before the decode and the chart builds take the main thread.
 requestAnimationFrame(() => requestAnimationFrame(boot));

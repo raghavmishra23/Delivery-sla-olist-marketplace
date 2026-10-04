@@ -1,0 +1,2 @@
+Fact_Rows,Order_Rows,Orphan_Fact_Rows,Sla_Eligible,Sla_Eligible_Source,On_Time_Mismatches,Rows_Without_Items,Rows_Without_Review,Order_Value_Brl,Order_Value_Source
+99441,99441,0,96470,96470,0,775,768,13591643.7000,13591643.7000

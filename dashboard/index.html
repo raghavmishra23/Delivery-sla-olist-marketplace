@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>E-Pharmacy Delivery SLA Dashboard</title>
+<title>Delivery SLA — Olist marketplace</title>
 <script>
   // Runs before first paint so a stored light theme never flashes dark first.
   try {
@@ -16,134 +16,168 @@
 
 <header class="topbar">
   <div class="masthead">
-    <h1>E-Pharmacy Delivery Performance <span>&amp; Prescription Verification</span></h1>
-    <button class="toggle" id="theme-toggle" type="button" aria-pressed="true">
-      <span class="toggle-label">Theme</span>
-      <span class="toggle-track">
-        <span class="toggle-thumb">
-          <svg class="icon moon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M13.2 10.4A5.6 5.6 0 0 1 6.1 3a.6.6 0 0 0-.86-.67 6.8 6.8 0 1 0 8.9 8.9.6.6 0 0 0-.67-.86Z"/>
-          </svg>
-          <svg class="icon sun" viewBox="0 0 16 16" aria-hidden="true">
-            <circle cx="8" cy="8" r="3.1"/>
-            <g stroke-width="1.5" stroke-linecap="round">
-              <path d="M8 1v1.8M8 13.2V15M15 8h-1.8M2.8 8H1M12.95 3.05l-1.27 1.27M4.32 11.68l-1.27 1.27M12.95 12.95l-1.27-1.27M4.32 4.32 3.05 3.05"/>
-            </g>
-          </svg>
+    <div>
+      <h1>Delivery SLA <span>· Olist marketplace</span></h1>
+      <div class="scope" id="scope">&nbsp;</div>
+    </div>
+    <div class="controls">
+      <nav class="seg" role="tablist">
+        <button class="tab" id="tab-overview" role="tab" aria-selected="true" aria-controls="page-overview">Overview</button>
+        <button class="tab" id="tab-sellers" role="tab" aria-selected="false" aria-controls="page-sellers">Sellers</button>
+        <button class="tab" id="tab-geo" role="tab" aria-selected="false" aria-controls="page-geo">Geography</button>
+        <button class="tab" id="tab-reviews" role="tab" aria-selected="false" aria-controls="page-reviews">Reviews</button>
+      </nav>
+      <button class="toggle" id="theme-toggle" type="button" aria-pressed="true">
+        <span class="toggle-track">
+          <span class="toggle-thumb">
+            <svg class="icon moon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M13.2 10.4A5.6 5.6 0 0 1 6.1 3a.6.6 0 0 0-.86-.67 6.8 6.8 0 1 0 8.9 8.9.6.6 0 0 0-.67-.86Z"/>
+            </svg>
+            <svg class="icon sun" viewBox="0 0 16 16" aria-hidden="true">
+              <circle cx="8" cy="8" r="3.1"/>
+              <g stroke-width="1.5" stroke-linecap="round">
+                <path d="M8 1v1.8M8 13.2V15M15 8h-1.8M2.8 8H1M12.95 3.05l-1.27 1.27M4.32 11.68l-1.27 1.27M12.95 12.95l-1.27-1.27M4.32 4.32 3.05 3.05"/>
+              </g>
+            </svg>
+          </span>
         </span>
-      </span>
-    </button>
+      </button>
+    </div>
   </div>
 
   <div class="filters">
-    <div class="filter">
-      <label for="f-from">Month from</label>
-      <select id="f-from"></select>
-    </div>
-    <div class="filter">
-      <label for="f-to">Month to</label>
-      <select id="f-to"></select>
-    </div>
-    <div class="filter">
-      <label for="f-city">City</label>
-      <select id="f-city"></select>
-    </div>
-    <div class="filter">
-      <label for="f-cat">Category</label>
-      <select id="f-cat"></select>
-    </div>
-    <div class="filter">
-      <label for="f-partner">Delivery partner</label>
-      <select id="f-partner"></select>
-    </div>
-    <div class="filter">
-      <label for="f-rx">Prescription</label>
-      <select id="f-rx"></select>
-    </div>
+    <div class="filter"><label for="f-from">Month from</label><select id="f-from"></select></div>
+    <div class="filter"><label for="f-to">Month to</label><select id="f-to"></select></div>
+    <div class="filter"><label for="f-state">Customer state</label><select id="f-state"></select></div>
+    <div class="filter"><label for="f-category">Product category</label><select id="f-category"></select></div>
+    <div class="filter"><label for="f-payment">Payment type</label><select id="f-payment"></select></div>
+    <div class="filter"><label for="f-status">Order status</label><select id="f-status"></select></div>
     <button id="reset" type="button">Reset filters</button>
   </div>
-
-  <nav class="tabs" role="tablist">
-    <button class="tab" id="tab-exec" role="tab" aria-selected="true" aria-controls="page-exec">Executive summary</button>
-    <button class="tab" id="tab-ops" role="tab" aria-selected="false" aria-controls="page-ops">Logistics &amp; prescription</button>
-    <span class="tab-ink" aria-hidden="true"></span>
-  </nav>
 </header>
 
 <main id="board">
 
-<section class="page" id="page-exec" role="tabpanel" aria-labelledby="tab-exec">
-  <div class="row" id="kpis">
-    <div class="card kpi"><div class="skel skel-kpi"></div></div>
-    <div class="card kpi"><div class="skel skel-kpi"></div></div>
-    <div class="card kpi"><div class="skel skel-kpi"></div></div>
-    <div class="card kpi"><div class="skel skel-kpi"></div></div>
-    <div class="card kpi"><div class="skel skel-kpi"></div></div>
-    <div class="card kpi"><div class="skel skel-kpi"></div></div>
+<section class="page bento" id="page-overview" role="tabpanel" aria-labelledby="tab-overview">
+  <div class="t hero span2" id="k-otd"><div class="skel skel-hero"></div></div>
+  <div class="t" id="k-speed"><div class="skel skel-kpi"></div></div>
+  <div class="t" id="k-onestar"><div class="skel skel-kpi"></div></div>
+
+  <div class="t span2">
+    <div class="h">On-time rate by month</div>
+    <div class="hs">Months with 500+ eligible orders · single axis, volume not overlaid</div>
+    <div class="plot" id="c-trend"><div class="skel ar-wide"></div></div>
+  </div>
+  <div class="t">
+    <div class="h">Weakest states</div>
+    <div class="hs" id="s-worst">&nbsp;</div>
+    <div class="plot" id="c-worst"><div class="skel ar-tall"></div></div>
+  </div>
+  <div class="t">
+    <div class="h">Strongest states</div>
+    <div class="hs" id="s-best">&nbsp;</div>
+    <div class="plot" id="c-best"><div class="skel ar-tall"></div></div>
   </div>
 
-  <div class="row">
-    <div class="card w4">
-      <h2>On-time vs late</h2>
-      <p class="sub">Delivered orders with a recorded delivery time</p>
-      <div class="plot" id="c-split"><div class="skel ar-donut"></div></div>
-    </div>
-    <div class="card w8">
-      <h2>On-time rate by city</h2>
-      <p class="sub" id="city-sub">&nbsp;</p>
-      <div class="plot" id="c-city"><div class="skel ar-city"></div></div>
-    </div>
+  <div class="t span2">
+    <div class="h">Review score by delivery outcome</div>
+    <div class="hs">Share of reviews at each score</div>
+    <div class="legend"><span><i class="sw good"></i>On time</span><span><i class="sw bad"></i>Late</span></div>
+    <div class="plot" id="c-review"><div class="skel ar-wide"></div></div>
   </div>
-
-  <div class="row">
-    <div class="card w12">
-      <h2>Monthly on-time rate and order volume</h2>
-      <p class="sub">Line: on-time rate (left). Bars: orders placed (right).</p>
-      <div class="plot" id="c-trend"><div class="skel ar-trend"></div></div>
-    </div>
+  <div class="t span2">
+    <div class="h">Seller late rate</div>
+    <div class="hs" id="s-sellers">&nbsp;</div>
+    <div class="plot" id="c-sellers"><div class="skel ar-wide"></div></div>
   </div>
 </section>
 
-<section class="page" id="page-ops" role="tabpanel" aria-labelledby="tab-ops" hidden>
-  <div class="row">
-    <div class="card w5">
-      <h2>Late share by delivery partner</h2>
-      <p class="sub">Bar length is the breach rate; n is the partner's SLA-eligible deliveries.</p>
-      <div class="plot" id="c-partner"><div class="skel ar-partner"></div></div>
-    </div>
-    <div class="card w7">
-      <h2>On-time rate by city and partner</h2>
-      <p class="sub" id="matrix-sub">&nbsp;</p>
-      <div class="plot" id="c-matrix"><div class="skel ar-matrix"></div></div>
-      <p class="note" id="matrix-note"></p>
-    </div>
+<section class="page bento" id="page-sellers" role="tabpanel" aria-labelledby="tab-sellers" hidden>
+  <div class="t hero span2" id="k-spread"><div class="skel skel-hero"></div></div>
+  <div class="t" id="k-ranked"><div class="skel skel-kpi"></div></div>
+  <div class="t" id="k-median"><div class="skel skel-kpi"></div></div>
+
+  <div class="t span2">
+    <div class="h">Worst sellers by late rate</div>
+    <div class="hs" id="s-worstsell">&nbsp;</div>
+    <div class="plot" id="c-worstsell"><div class="skel ar-wide"></div></div>
+  </div>
+  <div class="t span2">
+    <div class="h">Best sellers by late rate</div>
+    <div class="hs" id="s-bestsell">&nbsp;</div>
+    <div class="plot" id="c-bestsell"><div class="skel ar-wide"></div></div>
   </div>
 
-  <div class="row">
-    <div class="card w6">
-      <h2>SLA breach rate by verification time</h2>
-      <p class="sub">Prescription orders only, grouped by minutes to verify</p>
-      <div class="plot" id="c-bucket"><div class="skel ar-plot"></div></div>
-      <p class="note">Verification happens <strong>inside</strong> the delivery window — the clock starts when the order is placed, so verification minutes are never added on top of delivery hours. These buckets are segmentation, not causation: slow verification and slow delivery can share an upstream cause.</p>
-    </div>
-    <div class="card w6">
-      <h2>Chronic vs OTC</h2>
-      <p class="sub">Same denominators as the KPI cards, split by medicine category</p>
-      <div class="plot" id="c-cat"><div class="skel ar-plot"></div></div>
-    </div>
+  <div class="t span2">
+    <div class="h">Late rate by seller state</div>
+    <div class="hs">Where the seller ships from</div>
+    <div class="plot" id="c-sellerstate"><div class="skel ar-wide"></div></div>
+  </div>
+  <div class="t span2">
+    <div class="h">Shipping within the state vs across states</div>
+    <div class="hs">Seller state compared with customer state on the same order</div>
+    <div class="plot" id="c-crossstate"><div class="skel ar-wide"></div></div>
+  </div>
+</section>
+
+<section class="page bento" id="page-geo" role="tabpanel" aria-labelledby="tab-geo" hidden>
+  <div class="t hero span2" id="k-gap"><div class="skel skel-hero"></div></div>
+  <div class="t" id="k-states"><div class="skel skel-kpi"></div></div>
+  <div class="t" id="k-concentration"><div class="skel skel-kpi"></div></div>
+
+  <div class="t span2">
+    <div class="h">On-time rate by customer state</div>
+    <div class="hs" id="s-allstates">&nbsp;</div>
+    <div class="plot scroll" id="c-allstates"><div class="skel ar-wide"></div></div>
+  </div>
+  <div class="t">
+    <div class="h">Slowest states</div>
+    <div class="hs">Average days from purchase to delivery</div>
+    <div class="plot" id="c-slowest"><div class="skel ar-tall"></div></div>
+  </div>
+  <div class="t">
+    <div class="h">Fastest states</div>
+    <div class="hs">Average days from purchase to delivery</div>
+    <div class="plot" id="c-fastest"><div class="skel ar-tall"></div></div>
   </div>
 
-  <div class="row">
-    <div class="card w6">
-      <h2>Refund value by city</h2>
-      <p class="sub">Total refunded amount; refund incidence is reported separately in the KPI row.</p>
-      <div class="plot" id="c-refund-city"><div class="skel ar-refund"></div></div>
-    </div>
-    <div class="card w6">
-      <h2>Refund value by partner</h2>
-      <p class="sub">Total refunded amount on delivered orders</p>
-      <div class="plot" id="c-refund-partner"><div class="skel ar-partner"></div></div>
-    </div>
+  <div class="t span2">
+    <div class="h">Where the late orders are</div>
+    <div class="hs">Count of late deliveries, not rate — volume follows population</div>
+    <div class="plot" id="c-latevol"><div class="skel ar-wide"></div></div>
+  </div>
+  <div class="t span2">
+    <div class="h">Promise headroom by state</div>
+    <div class="hs">Average promised days minus average actual days</div>
+    <div class="plot" id="c-headroom"><div class="skel ar-wide"></div></div>
+  </div>
+</section>
+
+<section class="page bento" id="page-reviews" role="tabpanel" aria-labelledby="tab-reviews" hidden>
+  <div class="t hero span2" id="k-lowrev"><div class="skel skel-hero"></div></div>
+  <div class="t" id="k-avgscore"><div class="skel skel-kpi"></div></div>
+  <div class="t" id="k-noreview"><div class="skel skel-kpi"></div></div>
+
+  <div class="t span2">
+    <div class="h">Low review rate by month</div>
+    <div class="hs">Share of reviews scoring 1★ or 2★ · months with 500+ reviews</div>
+    <div class="plot" id="c-lowtrend"><div class="skel ar-wide"></div></div>
+  </div>
+  <div class="t span2">
+    <div class="h">Low review rate by how late the order was</div>
+    <div class="hs">Lateness measured against the promised date</div>
+    <div class="plot" id="c-bydelay"><div class="skel ar-wide"></div></div>
+  </div>
+
+  <div class="t span2">
+    <div class="h">Review score mix</div>
+    <div class="hs">Every reviewed order in the current filter</div>
+    <div class="plot" id="c-mix"><div class="skel ar-wide"></div></div>
+  </div>
+  <div class="t span2">
+    <div class="h">Low review rate by state</div>
+    <div class="hs" id="s-lowstate">&nbsp;</div>
+    <div class="plot" id="c-lowstate"><div class="skel ar-wide"></div></div>
   </div>
 </section>
 

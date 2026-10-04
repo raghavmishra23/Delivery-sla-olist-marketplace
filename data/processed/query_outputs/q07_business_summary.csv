@@ -1,0 +1,20 @@
+Metric,Value,Unit,Denominator
+Total orders,99441.0000,orders,All orders
+Delivered orders,96478.0000,orders,All orders
+SLA-eligible orders,96470.0000,orders,Delivered with both timestamps
+On-time deliveries,89936.0000,orders,SLA-eligible
+Late deliveries,6534.0000,orders,SLA-eligible
+On-time delivery rate,93.2269,pct,SLA-eligible
+SLA breach rate,6.7731,pct,SLA-eligible
+Avg delivery hours,301.4000,hours,SLA-eligible
+Avg promised hours,569.6700,hours,SLA-eligible
+"Avg delay, late only",271.2500,hours,Late SLA-eligible orders
+Avg transit hours,224.0000,hours,SLA-eligible with a transit lag
+Avg approval hours,10.2000,hours,SLA-eligible with an approval lag
+Total order value,13591643.7000,brl,Orders with items
+Total freight value,2251909.5400,brl,Orders with items
+Orders with no items,775.0000,orders,All orders
+Orders with no review,768.0000,orders,All orders
+Low-review rate,14.6900,pct,Orders with a review
+"Low-review rate, on-time orders",9.2700,pct,On-time orders with a review
+"Low-review rate, late orders",62.4200,pct,Late orders with a review
