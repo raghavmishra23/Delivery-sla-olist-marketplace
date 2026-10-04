@@ -25,3 +25,7 @@ powerbi/*.pbix
 docs/step-by-step-flow.md
 docs/sql-reference.md
 docs/overview-simple.md
+
+# Scratch renders and local experiments
+*.tmp
+scratch/

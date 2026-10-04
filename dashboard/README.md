@@ -40,17 +40,17 @@ any encoding guess under `file://`. The build fails loudly if the lookup is miss
 code in the fact table has no row in it.
 
 **Columns carried:** `Order_Month`, `Customer_State`, `Seller_State`, `Product_Category`,
-`Payment_Type`, `Order_Status`, `Actual_Delivery_Hours`, `Promised_Delivery_Hours`,
+`Payment_Type`, `Order_Status`, `Approval_Bucket`, `Actual_Delivery_Hours`, `Promised_Delivery_Hours`,
 `Primary_Seller_Id` (as an anonymous code), `Review_Score`, and `Is_Delivered` / `Is_Sla_Eligible` /
 `Is_On_Time` packed into one flag byte.
 
 **Columns dropped,** because no visual reads them and each would have cost 100–500 KB:
 `Order_ID`, `Customer_ID`, `Customer_City`, the five raw timestamps, `Approval_Hours`,
-`Handoff_Hours`, `Transit_Hours`, `Approval_Bucket`, `Item_Count`, `Seller_Count`,
+`Handoff_Hours`, `Transit_Hours`, `Item_Count`, `Seller_Count`,
 `Payment_Installments`, `Order_Value`, `Freight_Value`. `Delay_Hours`, `Is_Late` and `Is_Low_Review`
 are derived in the browser from the columns above. Each row's **region** is derived from its state
 code at decode time rather than encoded, so the extra dimension costs nothing. Current payload:
-1.33 MB.
+1.43 MB.
 
 ## Filters
 
@@ -72,6 +72,57 @@ clears the state, the hash and the stored copy. The theme is stored separately a
 
 Category, payment and status values arrive snake_case and are displayed title-cased
 (`bed_bath_table` to `Bed Bath Table`); the raw value stays the filter key.
+
+## Choosing a view
+
+Every chart card carries a dropdown in its header listing the representations that are **valid for
+that card's measure**. All of them consume the single model handed to `draw()`, so no two views of a
+card can print different figures for the same thing — that shared model is what guarantees it.
+
+| Card type | Views offered | Why |
+| --- | --- | --- |
+| Rate cards (states, regions, sellers, approval lag) | Bar · **Dot plot** · Column · Table | Orientation is a free choice; a donut is not, because rates do not sum to a whole |
+| Delay buckets, cross-state | Column · Bar · Table | Rates, native vertical |
+| Counts and compositions (`Where the late orders are`, review mix, review by outcome) | Bar/Column · Donut, and 100% stacked where there are two wholes · Table | These do sum to a whole, so a ring reads honestly |
+| Time series (monthly on-time, low review rate) | Line · Area · Table | Both encode by position, which is what makes the truncated y-axis legitimate. Bars encode by length and would overstate the differences — so they are not offered |
+
+On-time rate by state is 96.0 / 95.5 / 95.4 / 94.3 / 94.0, which sums to 475%. That is why no rate
+card offers a pie or donut anywhere on this page.
+
+**Bars start at zero; the dot plot is where the axis may truncate.** A bar encodes by length, so a
+non-zero baseline misstates it — at a floor of 78% the weakest state drew as a three-pixel sliver.
+A dot encodes by position, which is the same licence a line chart has, so the dot plot carries the
+truncated axis and is the view to use for reading the spread between 94% and 96%. Both label every
+value, so neither depends on the reader eyeballing it.
+
+The line and area views are genuinely different: **line** is stroke and markers only, **area** fills
+the band beneath it. Earlier both drew a fill and differed only by opacity.
+
+Cells below the ranking floor sink to the bottom of the full state and seller-state lists rather
+than heading a chart they are not allowed to rank in; they keep their `n=… low` label and stay
+visible.
+
+Donuts use a 60% inner radius, sort slices descending, label anything over 5% directly and leave the
+rest to the legend, put the total in the centre, and pool everything past the eighth slice into one
+`Other` slice rather than drawing confetti. `n` and the not-ranked marking travel into the legend
+and the table, so a different representation is never a route around the n rule. Where a card holds
+two wholes — review mix split by on-time and late — the donut shows one at a time behind a small
+switch, since two wholes cannot share a ring.
+
+The table shows the dimension label, the measure and **n**, formatted by the same function the chart
+uses.
+
+Clicking a column header sorts by it; clicking the sorted column twice more returns to the chart's
+own order, so switching views is not disorienting. The table scrolls inside the card rather than
+growing it, so the grid does not reflow. Rows below the ranking floor keep the chart's treatment —
+dimmed and marked `not ranked` — because a sortable column must not become a way around the n rule.
+
+Each card's choice is persisted next to the filter state: a `v=` key mapping card to view
+(`#v=latevol:d,allstates:c`). The card's default view costs nothing in the URL; an unknown card id
+or view code falls back to that default rather than throwing, and Reset returns every card to it.
+
+KPI and hero tiles have no dropdown — they are a single number with its context line, and a
+one-row table of it would be noise.
 
 ## Metric definitions
 

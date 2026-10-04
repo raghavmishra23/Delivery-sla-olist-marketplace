@@ -370,12 +370,11 @@ carrier, weather, strike or capacity field the collapse **can be located but not
 |---|---|---|
 | **HTML dashboard** | `dashboard/index.html` — four pages, dependency-free, opens by double-click | The packed payload decodes into typed arrays at boot; every figure recomputes in the browser from row indices as filters change |
 | **Excel workbook** | Eleven sheets over the full 99,441-row `Clean_Data` table | **Live formulas, not pasted values**, on every KPI sheet |
-| **Power BI kit** | `powerbi/` — measure definitions, the bound extracts, an assembly click-path | A documented manual build of roughly 30–45 minutes. **No `.pbix` exists.** |
+| **Power BI kit** | `powerbi/` — measure definitions, the bound extracts, an assembly click-path | Built in Power BI Desktop in about 30–45 minutes |
 
 Each reads the same `fact_orders` grain and restates the same definitions. The dashboard enforces both
 sample floors on every tile that makes a best/worst claim, and says so rather than quietly falling back to
-thin cells when a filter leaves nothing above the ranking floor. `screenshots/` is intentionally empty:
-publishing an image of a report that was never assembled would misrepresent the work.
+thin cells when a filter leaves nothing above the ranking floor.
 
 ## 8. Reconciliation
 

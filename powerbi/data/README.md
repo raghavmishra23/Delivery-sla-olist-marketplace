@@ -10,6 +10,6 @@ The fact table is not duplicated here. It is 38 MB, and keeping a second copy in
 repository would double that for no benefit. Load it from `data/processed/fact_orders.csv`;
 `assembly_guide.md` gives the exact path and the column types to set.
 
-The fact table is rebuilt by `py run_all.py`, or `py database/run_queries.py` alone. The two
+The fact table is rebuilt by `python run_all.py`, or `python database/run_queries.py` alone. The two
 dimension tables are small hand-maintained reference files committed alongside it; no script
 generates them.

@@ -13,62 +13,22 @@ See also [`architecture.md`](architecture.md) for how the pieces fit together an
 
 ---
 
-## 1. The one outbound interface: the Kaggle REST API
+## 1. Source data
 
-`database/fetch_data.py` makes exactly one network request in the entire project.
+The analysis runs on the **Brazilian E-Commerce Public Dataset by Olist**, published on Kaggle as
+`olistbr/brazilian-ecommerce` under CC BY-NC-SA 4.0. It is not redistributed here.
 
-```
-GET https://www.kaggle.com/api/v1/datasets/download/olistbr/brazilian-ecommerce
-```
-
-Response: a zip archive. Timeout 180 s. The body is written to `data/external/dataset.zip`, then only
-the `.csv` members are extracted into `data/external/`.
-
-### Authentication
-
-Two forms, in priority order. The request is built with `urllib.request` from the standard library —
-there is no Kaggle SDK dependency.
-
-| Form | Variables | Header sent | Notes |
-|---|---|---|---|
-| **API token** (preferred) | `KAGGLE_USERNAME` + `KAGGLE_KEY` | `Authorization: Basic base64(username:key)` | Both come from `kaggle.json`, downloaded at kaggle.com → Settings → API → Create New API Token |
-| **Session cookie** (lesser option) | `KAGGLE_COOKIE` | `Cookie: <value>` plus a browser `User-Agent` | The full Cookie header value from a signed-in request. Broader scope than the token and expires sooner, so prefer the token |
-
-If neither is present the script exits with a message naming both forms *and* the manual path. It
-never prompts, never retries, and never falls back to an unauthenticated request.
-
-### How credentials are supplied
-
-```
-cp .env.example .env     # then fill in KAGGLE_USERNAME and KAGGLE_KEY
-```
-
-`load_env()` parses `.env` as plain `KEY=VALUE` lines — blank lines and `#` comments skipped,
-surrounding quotes stripped — and loads them with `os.environ.setdefault`, so **a real environment
-variable always wins over the file**. That makes CI or a shell export override the file without
-editing it.
-
-`.env` is gitignored (as is `.env.*`, with `!.env.example` re-included, and `kaggle.json`).
-**Credentials never appear in any output.** The script logs which *form* was used —
-`fetching olistbr/brazilian-ecommerce using API token` or `… using session cookie` — and never the
-value. No credential reaches a log, a CSV, the database or a report.
-
-### Failure modes
+`database/fetch_data.py` expects the downloaded archive at `data/external/dataset.zip`, extracts only
+its `.csv` members into `data/external/`, and does nothing if the nine files are already present.
 
 | Condition | Behaviour |
 |---|---|
-| No credentials found | `SystemExit` with both accepted forms and the manual-download path |
-| `HTTPError` 401 or 403 | `SystemExit`: `download failed: HTTP 401 - credentials rejected` |
-| Any other `HTTPError` | `SystemExit` with the status code |
-| Body does not begin with `PK` | `SystemExit`: the response was not a zip. This is what an expired cookie looks like — Kaggle returns a sign-in page with HTTP 200 |
+| Nine CSVs present | Logs that the source files are already in place and returns |
+| Archive present, CSVs missing | Extracts the CSVs and logs each with its size |
+| Neither present | `SystemExit` naming the dataset, the download page and the expected archive path |
 
-### The manual fallback
-
-No Kaggle account, or a blocked network: download `olistbr/brazilian-ecommerce` by hand, save the
-archive as `data/external/dataset.zip`, and run `database/fetch_data.py` anyway. If the archive
-already exists the script logs `using existing archive …`, skips the network call entirely — it does
-not even read `.env` — and goes straight to unpacking. The rest of the pipeline cannot tell the
-difference.
+**The project makes no network requests.** The pipeline reads only local files, and the dashboard
+loads only its own three local assets.
 
 ---
 
@@ -80,7 +40,7 @@ non-zero on failure — they raise rather than warn.
 
 ```
 pip install -r requirements.txt     # pandas 3.0.6, numpy 2.5.3, openpyxl 3.1.5
-py run_all.py                       # everything, in order
+python run_all.py                       # everything, in order
 ```
 
 On Windows a bare `python` often resolves to the Microsoft Store alias stub; the `py` launcher or an
@@ -88,14 +48,14 @@ explicit path to `python.exe` avoids that.
 
 | Script | Invocation | Reads | Writes | Arguments / environment | Exit behaviour |
 |---|---|---|---|---|---|
-| `run_all.py` | `py run_all.py` | — | — | none | Runs the seven steps below in order via `subprocess`, printing a banner and an elapsed time for each. `SystemExit` naming the script and its exit code on the first non-zero return |
-| `database/fetch_data.py` | `py database/fetch_data.py` | `.env`, Kaggle | `data/external/` (zip + 9 CSVs) | `KAGGLE_USERNAME`, `KAGGLE_KEY`, `KAGGLE_COOKIE`; `.env` as a fallback source for all three | `SystemExit` — see §1 |
-| `database/clean_data.py` | `py database/clean_data.py` | `data/external/*.csv` | 8 cleaned CSVs, `dq_issue_log.csv`, `reports/data_quality_report.md` | none | `AssertionError` if the issue log disagrees with an independent recount of the raw files, or if no SLA-eligible orders survive |
-| `database/load_data.py` | `py database/load_data.py` | `data/processed/*.csv`, `database/schema.sql` | `database/olist.db` | none | `AssertionError` on a row-count mismatch; SQLite raises on any foreign-key or `CHECK` violation |
-| `database/run_queries.py` | `py database/run_queries.py` | `database/olist.db`, `sql/*.sql` | `data/processed/query_outputs/*.csv`, `data/processed/fact_orders.csv` | none | `FileNotFoundError` if the database is missing; `ValueError` on an unterminated trailing statement in a `.sql` file |
-| `dashboard/build_dashboard_data.py` | `py dashboard/build_dashboard_data.py [csv]` | `fact_orders.csv`, `dim_state.csv` | `dashboard/data/dashboard_data.js` | **`argv[1]`** = source CSV path, else **`FACT_ORDERS_CSV`**, else the default | `SystemExit` on a missing input, a missing required column, a missing or incomplete state lookup, a dictionary too large for one character, an hours value over the ceiling, or `Delay_Hours ≠ Actual − Promised` |
-| `excel/build_workbook.py` | `py excel/build_workbook.py` | `fact_orders.csv`, `orders.csv`, `dq_issue_log.csv`, `dim_state.csv` | `excel/delivery_sla_olist_marketplace.xlsx` | none | Raises on a missing input. Several minutes; 26 MB output. `orders.csv` is gitignored, so the Raw_Sample sheet needs the cleaning step to have run |
-| `database/reconcile.py` | `py database/reconcile.py` | `q02_overall_sla.csv`, `fact_orders.csv`, the workbook, the payload | `reports/reconciliation.md` | none | Logs `skipping <source>` if the workbook or payload has not been built yet; `SystemExit` naming every KPI that disagrees |
+| `run_all.py` | `python run_all.py` | — | — | none | Runs the seven steps below in order via `subprocess`, printing a banner and an elapsed time for each. `SystemExit` naming the script and its exit code on the first non-zero return |
+| `database/fetch_data.py` | `python database/fetch_data.py` | `data/external/dataset.zip` | `data/external/` (9 CSVs) | Exits naming the dataset and the expected archive path when neither is present |
+| `database/clean_data.py` | `python database/clean_data.py` | `data/external/*.csv` | 8 cleaned CSVs, `dq_issue_log.csv`, `reports/data_quality_report.md` | none | `AssertionError` if the issue log disagrees with an independent recount of the raw files, or if no SLA-eligible orders survive |
+| `database/load_data.py` | `python database/load_data.py` | `data/processed/*.csv`, `database/schema.sql` | `database/olist.db` | none | `AssertionError` on a row-count mismatch; SQLite raises on any foreign-key or `CHECK` violation |
+| `database/run_queries.py` | `python database/run_queries.py` | `database/olist.db`, `sql/*.sql` | `data/processed/query_outputs/*.csv`, `data/processed/fact_orders.csv` | none | `FileNotFoundError` if the database is missing; `ValueError` on an unterminated trailing statement in a `.sql` file |
+| `dashboard/build_dashboard_data.py` | `python dashboard/build_dashboard_data.py [csv]` | `fact_orders.csv`, `dim_state.csv` | `dashboard/data/dashboard_data.js` | **`argv[1]`** = source CSV path, else **`FACT_ORDERS_CSV`**, else the default | `SystemExit` on a missing input, a missing required column, a missing or incomplete state lookup, a dictionary too large for one character, an hours value over the ceiling, or `Delay_Hours ≠ Actual − Promised` |
+| `excel/build_workbook.py` | `python excel/build_workbook.py` | `fact_orders.csv`, `orders.csv`, `dq_issue_log.csv`, `dim_state.csv` | `excel/delivery_sla_olist_marketplace.xlsx` | none | Raises on a missing input. Several minutes; 26 MB output. `orders.csv` is gitignored, so the Raw_Sample sheet needs the cleaning step to have run |
+| `database/reconcile.py` | `python database/reconcile.py` | `q02_overall_sla.csv`, `fact_orders.csv`, the workbook, the payload | `reports/reconciliation.md` | none | Logs `skipping <source>` if the workbook or payload has not been built yet; `SystemExit` naming every KPI that disagrees |
 
 `build_dashboard_data.py` is the only script taking input: it accepts a positional CSV path or the
 `FACT_ORDERS_CSV` environment variable, so a payload can be built from a filtered or experimental

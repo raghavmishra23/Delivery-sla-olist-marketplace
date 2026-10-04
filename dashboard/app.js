@@ -13,11 +13,13 @@ const NS = "http://www.w3.org/2000/svg";
 const THEME_KEY = "theme";
 const MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DELAY_BUCKETS = ["On time", "1–3 d late", "4–7 d late", "Over 7 d late"];
+// dictionary codes are alphabetical; approval buckets only read correctly in time order
+const APPROVAL_ORDER = ["0-1h", "1-6h", "6-24h", ">24h", "Unknown"];
 
 // every column and dictionary the visuals read; checked at boot so a contract shift names itself
 const NEEDED_COLS = ["month", "cstate", "sstate", "category", "payment", "status",
   "actual", "promised", "seller", "review", "flags"];
-const NEEDED_DICTS = ["month", "cstate", "sstate", "category", "payment", "status"];
+const NEEDED_DICTS = ["month", "cstate", "sstate", "category", "payment", "status", "abucket"];
 
 const board = document.getElementById("board");
 const tip = document.getElementById("tip");
@@ -174,7 +176,7 @@ function groupByCol(idx, col) {
   return g;
 }
 
-const FILTER_DIMS = ["region", "cstate", "category", "payment", "status"];
+const FILTER_DIMS = ["region", "cstate", "category", "payment", "status", "abucket"];
 // short hash keys; low-cardinality dimensions travel by value so a rebuilt dictionary cannot
 // silently reinterpret a shared link, and only categories pay the index/size trade
 function titleize(v) {
@@ -187,6 +189,7 @@ const DIM = {
   category: { hash: "c", noun: "categories", all: "All categories", byIndex: true, display: titleize, nullLabel: "(no category)" },
   payment: { hash: "p", noun: "payment types", all: "All payment types", byIndex: false, display: titleize },
   status: { hash: "s", noun: "statuses", all: "All statuses", byIndex: false, display: titleize },
+  abucket: { hash: "a", noun: "approval bands", all: "All approval lags", byIndex: false, display: v => v },
 };
 const STATE_KEY = "filters";
 const MULTI = {};
@@ -203,7 +206,9 @@ function dimOptions(dim) {
   const cfg = DIM[dim];
   const opts = LEV[dim]
     .map((value, i) => ({ value, code: i + 1, label: cfg.display(value, i) }))
-    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+    .sort(dim === "abucket"
+      ? (a, b) => APPROVAL_ORDER.indexOf(a.value) - APPROVAL_ORDER.indexOf(b.value)
+      : (a, b) => a.label.localeCompare(b.label, "pt-BR"));
   // rows with no value get their own option rather than vanishing from an untouched filter
   if (nullCount(dim)) opts.push({ value: "~", code: 0, label: cfg.nullLabel || "(none)" });
   return opts;
@@ -390,6 +395,9 @@ function readRange() {
 function resetFilters() {
   setRange(months[0], months[months.length - 1]);
   FILTER_DIMS.forEach(dim => MULTI[dim].clear());
+  views.clear();
+  sorts.clear();
+  donutPick.clear();
 }
 
 /** Filter state lives in the hash so a cut can be linked; storage is only a fallback. */
@@ -405,6 +413,10 @@ function writeState(clear) {
       const tokens = picked.map(c => (DIM[dim].byIndex ? String(c) : encodeURIComponent(MULTI[dim].option(c).value)));
       parts.push(`${DIM[dim].hash}=${tokens.join(",")}`);
     });
+    // only the cards showing a table are listed; chart is the default and costs nothing
+    if (views.size) {
+      parts.push(`v=${[...views].map(([id, v]) => `${id.slice(2)}:${VIEW_CODE[v]}`).join(",")}`);
+    }
   }
   const hash = parts.join("&");
   try {
@@ -439,6 +451,14 @@ function readState() {
   if (seen.m) {
     const [from, to] = seen.m.split(":");
     if (months.includes(from) && months.includes(to)) setRange(from, to);
+  }
+  if (seen.v) {
+    seen.v.split(",").forEach(piece => {
+      const [short, code] = piece.split(":");
+      const id = "c-" + short;
+      // an unknown card or view code falls back to the card's default rather than throwing
+      if (document.getElementById(id) && CODE_VIEW[code]) views.set(id, CODE_VIEW[code]);
+    });
   }
   FILTER_DIMS.forEach(dim => {
     const token = seen[DIM[dim].hash];
@@ -537,13 +557,27 @@ function tile(id, { lab, value, note, chip, chipCls = "", big = false, tone = ""
   if (firstPaint) host.classList.add("enter");
 }
 
+/** Measures the widest label so the gutter fits its content. A fixed gutter silently clips any
+ *  card whose categories are longer than the author assumed, which is a whole class of bug. */
+function labelGutter(svg, labels, floor, cap) {
+  const probe = el("text", { class: "row-label", x: -9999, y: -9999 });
+  svg.append(probe);
+  const widest = labels.reduce((wide, text) => {
+    probe.textContent = String(text);
+    const at = typeof probe.getComputedTextLength === "function"
+      ? probe.getComputedTextLength() : String(text).length * 6;
+    return Math.max(wide, at);
+  }, 0);
+  probe.remove();
+  return Math.min(cap, Math.max(floor || 0, Math.ceil(widest) + 12));
+}
+
 /** Horizontal ranked rows: track, bar, label, value and sample size. Shared by every ranking tile. */
 function rankChart(host, rows, opts = {}) {
   if (!rows.length) return empty(host, opts.emptyMsg);
   const w = opts.w || 700;
   // stacked puts the name on its own line above the bar, for labels too long to sit beside one
   const stacked = !!opts.stacked;
-  const labelW = stacked ? 0 : (opts.labelW ?? 52);
   const valueW = opts.valueW ?? 64;
   const countW = stacked ? 0 : (opts.countW ?? 52);
   const rowH = opts.rowH ?? (stacked ? 30 : 28);
@@ -551,6 +585,7 @@ function rankChart(host, rows, opts = {}) {
   const top = 6;
   const h = rows.length * (rowH + gap) - gap + top + (opts.caption ? 22 : 6);
   const svg = canvas(host, w, h);
+  const labelW = stacked ? 0 : labelGutter(svg, rows.map(r => r.label), opts.labelW, w * 0.42);
   const barLeft = labelW;
   const barW = w - labelW - valueW - countW;
   const lo = opts.lo ?? 0;
@@ -610,29 +645,67 @@ function lineChart(host, points, opts = {}) {
 
   const tone = opts.tone || "good";
   const drawn = points.map((p, i) => ({ ...p, x: x(i), y: y(p.value) }));
-  svg.append(el("path", {
-    class: "area-" + tone,
-    d: `M${drawn[0].x} ${h - B}` + drawn.map(p => `L${p.x} ${p.y}`).join("") + `L${drawn[drawn.length - 1].x} ${h - B}Z`,
-  }));
+  // the line view is stroke and markers only; the band belongs to the area view, otherwise the
+  // two views differ by a fill opacity nobody can see
+  if (opts.area) {
+    svg.append(el("path", {
+      class: "area-" + tone,
+      d: `M${drawn[0].x} ${h - B}` + drawn.map(p => `L${p.x} ${p.y}`).join("") + `L${drawn[drawn.length - 1].x} ${h - B}Z`,
+    }));
+  }
   svg.append(el("path", { class: "line-" + tone, d: drawn.map((p, i) => `${i ? "L" : "M"}${p.x} ${p.y}`).join("") }));
 
-  const flagged = drawn.filter(p => !p.thin && isFlagged(p, opts));
   drawn.forEach((p, i) => {
     const bad = !p.thin && isFlagged(p, opts);
     svg.append(el("circle", {
-      class: p.thin ? "dot-thin" : (bad ? "dot-bad" : "dot-" + tone), cx: p.x, cy: p.y, r: bad ? 4.5 : 3,
+      class: p.thin ? "dot-thin" : (bad ? "dot-bad" : "dot-" + tone), cx: p.x, cy: p.y,
+      r: bad ? 4.5 : (opts.area ? 2.5 : 3.4),
       "data-tip": `${p.tip}: ${opts.fmt(p.value)} · n=${intText(p.n)}`
         + (p.thin ? ` · under ${MIN_SAMPLE}, read with care` : ""),
     }));
-    // only call out the outliers when there are few enough to read; otherwise colour carries it
-    if (bad && flagged.length <= 5) {
-      svg.append(el("text", { class: "flag-text", x: p.x, y: p.y + 18, "text-anchor": "middle" }, p.value.toFixed(1)));
-    }
     if (i % opts.every === 0) {
       svg.append(el("text", { class: "axis-text", x: p.x, y: h - 14, "text-anchor": "middle" }, p.label));
     }
   });
+
+  flagLabels(svg, drawn.filter(p => !p.thin && isFlagged(p, opts)), { L, R, T, B, w, h, opts });
   return svg;
+}
+
+/** Outlier callouts collide once two flagged periods are adjacent, so each label is measured and
+ *  placed in the first free row; one that cannot be placed is dropped to the marker and tooltip. */
+function flagLabels(svg, points, { L, R, T, B, w, h, opts }) {
+  if (!points.length) return;
+  const extreme = p => (opts.flagAbove != null ? p.value : -p.value);
+  const shown = points.slice().sort((a, b) => extreme(b) - extreme(a)).slice(0, 8);
+  const rows = [18, 32, -13];
+  const placed = [];
+
+  shown.sort((a, b) => a.x - b.x).forEach(p => {
+    const text = el("text", { class: "flag-text", "text-anchor": "middle" }, p.value.toFixed(1));
+    svg.append(text);
+    const half = (typeof text.getComputedTextLength === "function"
+      ? text.getComputedTextLength() : String(p.value.toFixed(1)).length * 6) / 2 + 3;
+    const x = Math.min(Math.max(p.x, L + half), w - R - half);
+
+    // compare real boxes, not row slots: two points at the same offset can sit far apart in y
+    const row = rows.find(dy => {
+      const y = p.y + dy;
+      if (y > h - B - 6 || y < T + 10) return false;
+      return !placed.some(q => Math.abs(q.x - x) < q.half + half && Math.abs(q.y - y) < 13);
+    });
+    if (row === undefined) {
+      text.remove();
+      return;
+    }
+    text.setAttribute("x", x);
+    text.setAttribute("y", p.y + row);
+    placed.push({ x, y: p.y + row, half });
+    // a label pushed to the second row needs a leader back to the point it describes
+    if (row === 32) {
+      svg.insertBefore(el("line", { class: "flag-leader", x1: p.x, x2: x, y1: p.y + 7, y2: p.y + 22 }), text);
+    }
+  });
 }
 
 /** Clustered columns with a shared y-scale. */
@@ -672,7 +745,8 @@ function groupBars(host, groups, series, opts = {}) {
 /** Two separate floors. MIN_SAMPLE decides what gets drawn and marked; MIN_RANK decides what may
  *  be ordered or quoted. A `limit` means the caller is making a best/worst claim, so it only ever
  *  sees rankable rows — never a quiet fallback to thin cells. */
-function stateRows(idx, { metric, sort, limit, rankFloor = MIN_RANK, col = D.cstate, key = "cstate", cls }) {
+function stateRows(idx, opts) {
+  const { metric, sort, limit, rankFloor = MIN_RANK, col = D.cstate, key = "cstate", cls } = opts;
   const rows = [];
   // show the full state name; the UF code stays as a secondary label since it is the data key
   const names = LEV[key + "Name"] || LEV[key];
@@ -686,6 +760,8 @@ function stateRows(idx, { metric, sort, limit, rankFloor = MIN_RANK, col = D.cst
     });
   });
   rows.sort(sort);
+  // a marked cell stays reachable but never heads a list it is not allowed to rank in
+  if (opts.sinkUnranked) rows.sort((a, b) => (a.rankable === b.rankable ? 0 : a.rankable ? -1 : 1));
   const out = limit ? rows.filter(r => r.rankable).slice(0, limit) : rows;
   return out.map(r => ({ ...r, cls: typeof cls === "function" ? cls(r) : cls }));
 }
@@ -739,23 +815,24 @@ function renderOverview(idx) {
 
   const trend = monthSeries(idx, g => otdStats(g), p => p.rate == null ? null : p.rate * 100);
   document.getElementById("s-trend").textContent = trendSub(trend);
-  lineChart(document.getElementById("c-trend"), trend, {
+  draw("c-trend", "line", trend, {
     fmt: v => v.toFixed(1) + "%", every: Math.max(1, Math.ceil(trend.length / 6)), lo: 78, hi: 100,
+    dimLabel: "Month", measure: "On-time rate",
     emptyMsg: `${intText(s.n)} eligible orders in this selection, spread over too few months to draw a trend.`,
   });
 
   const worst = stateRows(idx, { metric: otdMetric, sort: (a, b) => a.value - b.value, limit: 5, cls: "bar-bad" });
   const best = stateRows(idx, { metric: otdMetric, sort: (a, b) => b.value - a.value, limit: 5, cls: "bar-good" });
-  const sub = `${MIN_RANK}+ eligible orders to rank · every state is listed on the Geography tab`;
+  const sub = `${MIN_RANK}+ orders to rank · all states on the Geography tab`;
   document.getElementById("s-worst").textContent = sub;
   document.getElementById("s-best").textContent = sub;
   const noRank = `No state in this selection has ${MIN_RANK}+ eligible orders to rank.`;
-  const stateOpts = { w: 330, fmt: v => v.toFixed(1) + "%", lo: 78, hi: 100, stacked: true, valueW: 54,
-    emptyMsg: noRank };
-  rankChart(document.getElementById("c-worst"), worst, stateOpts);
-  rankChart(document.getElementById("c-best"), best, stateOpts);
+  const stateOpts = { w: 330, fmt: v => v.toFixed(1) + "%", dotLo: 78, hi: 100, stacked: true, valueW: 54,
+    emptyMsg: noRank, dimLabel: "State", measure: "On-time rate", views: ["bar", "dot", "column", "table"] };
+  draw("c-worst", "rank", worst, stateOpts);
+  draw("c-best", "rank", best, stateOpts);
 
-  renderReviewSplit(document.getElementById("c-review"), rev);
+  renderReviewSplit(rev);
 
   // the 200-order ranking bar is calibrated on the national view; under a filter it can empty the
   // tile entirely, so fall back to the small-sample floor and say the rows are below the bar
@@ -769,23 +846,30 @@ function renderOverview(idx) {
       ? `Fewer than six sellers reach ${MIN_SELLER_N} eligible orders here — showing ${intText(pool.length)} with `
         + `${MIN_SAMPLE}+, all below the ranking bar`
       : `No seller reaches ${MIN_SAMPLE} eligible orders in this selection`;
-  rankChart(document.getElementById("c-sellers"), ends.map(r => ({ ...r, cls: r.value > 10 ? "bar-bad" : "bar-good" })), {
-    fmt: v => v.toFixed(2) + "%", labelW: 76, rowH: 26, gap: 12,
+  draw("c-sellers", "rank", ends.map(r => ({ ...r, cls: r.value > 10 ? "bar-bad" : "bar-good" })), {
+    fmt: v => v.toFixed(2) + "%", labelW: 76, rowH: 26, gap: 12, dimLabel: "Seller", measure: "Late rate",
+    views: ["bar", "dot", "column", "table"],
     caption: ranked.length >= 6 && ends.length >= 6 && ends[0].value > 0
       ? `${(ends[ends.length - 1].value / ends[0].value).toFixed(1)}× spread between the best and worst seller at comparable volume.`
       : null,
   });
 }
 
-function renderReviewSplit(host, rev) {
-  if (!rev.nOn && !rev.nLate) return empty(host, "No reviewed orders in this selection.");
-  const groups = [1, 2, 3, 4, 5].map(s => ({
+function renderReviewSplit(rev) {
+  const empties = { emptyMsg: "No reviewed orders in this selection." };
+  const groups = rev.nOn + rev.nLate ? [1, 2, 3, 4, 5].map(s => ({
     label: s + "★",
     values: [pct(rev.on[s], rev.nOn), pct(rev.late[s], rev.nLate)].map(v => (v == null ? null : v * 100)),
     n: [rev.nOn, rev.nLate],
-  }));
-  groupBars(host, groups, [{ name: "On time", cls: "bar-good" }, { name: "Late", cls: "bar-bad" }], {
-    fmt: v => (v == null ? "—" : v.toFixed(1) + "%"), axisFmt: v => v + "%", max: 65,
+  })) : [];
+  draw("c-review", "group",
+    { groups, series: [{ name: "On time", cls: "bar-good" }, { name: "Late", cls: "bar-bad" }] }, {
+    ...empties,
+    fmt: v => (v == null ? "—" : v.toFixed(1) + "%"), axisFmt: v => v + "%", max: 65, dimLabel: "Review score",
+    measure: "share of reviews",
+    views: ["column", "stack100", "donut", "table"],
+    sliceCls: starTone,
+    donutTotal: () => "100%",
     callout: rev.nLate ? { at: pct(rev.late[1], rev.nLate) * 100, text: `${pctText(pct(rev.late[1], rev.nLate))} of late orders are 1★` } : null,
   });
 }
@@ -864,7 +948,8 @@ function renderSellers(idx) {
     note: ranked.length ? `across the ${intText(ranked.length)} ranked sellers` : null,
   });
 
-  const opts = { fmt: v => v.toFixed(2) + "%", labelW: 64, rowH: 26, gap: 12 };
+  const opts = { fmt: v => v.toFixed(2) + "%", labelW: 64, rowH: 26, gap: 12,
+    dimLabel: "Seller", measure: "Late rate", views: ["bar", "dot", "column", "table"] };
   const pool = ranked.length >= 2 ? ranked : sellers.filter(r => r.n >= MIN_SAMPLE);
   const below = pool !== ranked;
   const worst = pool.slice(-8).reverse();
@@ -874,15 +959,87 @@ function renderSellers(idx) {
     : `of ${intText(ranked.length)} qualifying sellers`;
   document.getElementById("s-worstsell").textContent = pool.length ? `Worst ${worst.length} ${qualifier}` : "";
   document.getElementById("s-bestsell").textContent = pool.length ? `Best ${best.length} ${qualifier}` : "";
-  rankChart(document.getElementById("c-worstsell"), worst.map(r => ({ ...r, cls: "bar-bad" })), opts);
-  rankChart(document.getElementById("c-bestsell"), best.map(r => ({ ...r, cls: "bar-good" })), opts);
+  draw("c-worstsell", "rank", worst.map(r => ({ ...r, cls: "bar-bad" })), opts);
+  draw("c-bestsell", "rank", best.map(r => ({ ...r, cls: "bar-good" })), opts);
 
-  rankChart(document.getElementById("c-sellerstate"), stateRows(idx, {
+  draw("c-sellerstate", "rank", stateRows(idx, {
     metric: lateMetric, sort: (a, b) => b.value - a.value, col: D.sstate, key: "sstate",
-    cls: r => (r.value > 10 ? "bar-bad" : "bar-good"),
-  }), { fmt: v => v.toFixed(1) + "%", labelW: 132, rowH: 22, gap: 9 });
+    sinkUnranked: true, cls: r => (r.value > 10 ? "bar-bad" : "bar-good"),
+  }), { fmt: v => v.toFixed(1) + "%", labelW: 132, rowH: 22, gap: 9,
+    dimLabel: "Seller state", measure: "Late rate", views: ["bar", "dot", "column", "table"] });
 
   renderCrossState(idx);
+  renderApproval(idx);
+}
+
+function renderApproval(idx) {
+  const buckets = APPROVAL_ORDER.map(name => {
+    const code = LEV.abucket.indexOf(name) + 1;
+    const rows = [];
+    for (let k = 0; k < idx.length; k++) if (D.abucket[idx[k]] === code) rows.push(idx[k]);
+    const st = otdStats(rows);
+    return { label: name, values: [st.rate == null ? null : (1 - st.rate) * 100], n: [st.n] };
+  }).filter(g => g.n[0] > 0);
+
+  const worst = [...buckets].filter(g => g.n[0] >= MIN_SAMPLE).sort((a, b) => b.values[0] - a.values[0])[0];
+  document.getElementById("s-approval").textContent = buckets.length
+    ? `Hours from purchase to payment approval · ${worst ? `${worst.label} breaches most at ${worst.values[0].toFixed(2)}%` : ""}`
+      + ` · pooled, the order is not monotonic — see the next card`
+    : "";
+  draw("c-approval", "group", { groups: buckets, series: [{ name: "Breach rate", cls: "bar-bad" }] }, {
+    fmt: v => (v == null ? "—" : v.toFixed(2) + "%"), axisFmt: v => v + "%", max: 12,
+    ticks: [0, 4, 8, 12], h: 258, dimLabel: "Approval lag", measure: "Breach rate",
+    emptyMsg: "No eligible orders with an approval lag in this selection.",
+  });
+
+  renderApprovalBands(idx);
+}
+
+/** The pooled bucket order is non-monotonic because a slow approval and a wide promise travel
+ *  together. Holding the promise window fixed separates them. */
+function renderApprovalBands(idx) {
+  const eligible = [];
+  for (let k = 0; k < idx.length; k++) {
+    const i = idx[k];
+    if (D.sla[i] && D.promised[i]) eligible.push(i);
+  }
+  if (eligible.length < 40) {
+    document.getElementById("s-approvalband").textContent = "";
+    return empty(document.getElementById("c-approvalband"),
+      "Too few eligible orders in this selection to split by promise window.");
+  }
+
+  const sorted = eligible.slice().sort((a, b) => hrs(D.promised, a) - hrs(D.promised, b));
+  const cut = q => hrs(D.promised, sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * q))]);
+  const edges = [cut(0.25), cut(0.5), cut(0.75)];
+  const bandOf = i => {
+    const v = hrs(D.promised, i);
+    return v <= edges[0] ? 0 : v <= edges[1] ? 1 : v <= edges[2] ? 2 : 3;
+  };
+  const slowCode = LEV.abucket.indexOf(">24h") + 1;
+
+  const groups = ["Tightest 25%", "25–50%", "50–75%", "Widest 25%"].map((label, b) => {
+    const slow = [], quick = [];
+    eligible.forEach(i => { if (bandOf(i) === b) (D.abucket[i] === slowCode ? slow : quick).push(i); });
+    const a = otdStats(quick), c = otdStats(slow);
+    return {
+      label,
+      values: [a.rate == null ? null : (1 - a.rate) * 100, c.rate == null ? null : (1 - c.rate) * 100],
+      n: [a.n, c.n],
+    };
+  }).filter(g => g.n[0] && g.n[1]);
+
+  const gaps = groups.map(g => g.values[1] - g.values[0]);
+  document.getElementById("s-approvalband").textContent =
+    `Promise window split into quartiles (${(edges[0] / 24).toFixed(0)}, ${(edges[1] / 24).toFixed(0)}, `
+    + `${(edges[2] / 24).toFixed(0)} days) · >24h approval breaches more in `
+    + `${gaps.filter(g => g > 0).length} of ${gaps.length} bands`;
+  draw("c-approvalband", "group",
+    { groups, series: [{ name: "Approved within 24h", cls: "bar-mute" }, { name: ">24h to approve", cls: "bar-bad" }] }, {
+      fmt: v => (v == null ? "—" : v.toFixed(2) + "%"), axisFmt: v => v + "%", max: 12,
+      ticks: [0, 4, 8, 12], h: 258, dimLabel: "Promise window", measure: "Breach rate",
+      emptyMsg: "Not enough orders in each band to compare.",
+    });
 }
 
 function renderCrossState(idx) {
@@ -893,18 +1050,32 @@ function renderCrossState(idx) {
     (LEV.sstate[D.sstate[i] - 1] === LEV.cstate[D.cstate[i] - 1] ? same : cross).push(i);
   }
   const a = otdStats(same), b = otdStats(cross);
+  // on-time rate puts both bars near the top of a 0-100 axis and hides the difference; the breach
+  // rate is the same fact at a scale that separates, and it is honest on a zero baseline
   const groups = [
-    { label: "Same state", values: [a.rate == null ? null : a.rate * 100], n: [a.n] },
-    { label: "Different state", values: [b.rate == null ? null : b.rate * 100], n: [b.n] },
+    { label: "Within the state", values: [a.rate == null ? null : (1 - a.rate) * 100], n: [a.n], cls: "bar-good" },
+    { label: "Across states", values: [b.rate == null ? null : (1 - b.rate) * 100], n: [b.n], cls: "bar-bad" },
   ].filter(g => g.values[0] != null);
-  groupBars(document.getElementById("c-crossstate"), groups, [{ name: "On-time rate", cls: "bar-good" }], {
-    fmt: v => (v == null ? "—" : v.toFixed(1) + "%"), axisFmt: v => v + "%", max: 108,
-    ticks: [0, 25, 50, 75, 100], h: 258,
+  const ratio = groups.length === 2 && groups[0].values[0]
+    ? (groups[1].values[0] / groups[0].values[0]).toFixed(1) : null;
+  document.getElementById("s-crossstate").textContent =
+    "Seller state compared with customer state on the same order"
+    + (ratio ? ` · shipping across a state line breaches ${ratio}× as often` : "");
+  draw("c-crossstate", "group", { groups, series: [{ name: "Breach rate", cls: "bar-bad" }] }, {
+    fmt: v => (v == null ? "—" : v.toFixed(2) + "%"), axisFmt: v => v + "%", max: 10,
+    dimLabel: "Shipment", measure: "Breach rate", showValues: true, barW: 72,
+    ticks: [0, 5, 10],
+    byView: {
+      // two columns need a narrower, taller frame or they float in a wide empty card
+      column: { w: 520, h: 360 },
+      // and the horizontal view needs a label gutter wide enough for the category names
+      bar: { w: 700, rowH: 86, gap: 26, min: 10 },
+    },
   });
 }
 
 function renderGeo(idx) {
-  const all = stateRows(idx, { metric: otdMetric, sort: (a, b) => b.value - a.value });
+  const all = stateRows(idx, { metric: otdMetric, sort: (a, b) => b.value - a.value, sinkUnranked: true });
   const ranked = all.filter(r => r.rankable);
   const top = ranked[0], bottom = ranked[ranked.length - 1];
   const biggest = [...all].sort((a, b) => b.n - a.n)[0];
@@ -935,9 +1106,10 @@ function renderGeo(idx) {
       ? `every one clears the ${MIN_RANK}-order bar for ranking`
       : `${intText(all.length - ranked.length)} under ${MIN_RANK} eligible orders `
         + `${all.length - ranked.length === 1 ? "is" : "are"} listed but never ranked or quoted`);
-  rankChart(document.getElementById("c-allstates"), all.map(r => ({
+  draw("c-allstates", "rank", all.map(r => ({
     ...r, cls: r.value >= 93 ? "bar-good" : r.value >= 88 ? "bar-mute" : "bar-bad",
-  })), { fmt: v => v.toFixed(1) + "%", lo: 70, hi: 100, labelW: 132, rowH: 20, gap: 8 });
+  })), { fmt: v => v.toFixed(1) + "%", dotLo: 70, hi: 100, labelW: 132, rowH: 20, gap: 8,
+    dimLabel: "State", measure: "On-time rate", views: ["bar", "dot", "column", "table"] });
 
   const days = state => {
     const v = meanHours(state, D.actual);
@@ -946,9 +1118,10 @@ function renderGeo(idx) {
   const slow = stateRows(idx, { metric: days, sort: (a, b) => b.value - a.value, limit: 5, cls: "bar-bad" });
   const fast = stateRows(idx, { metric: days, sort: (a, b) => a.value - b.value, limit: 5, cls: "bar-good" });
   const dayOpts = { w: 330, fmt: v => (v == null ? "—" : v.toFixed(1) + " d"), stacked: true, valueW: 58,
-    emptyMsg: `No state in this selection has ${MIN_RANK}+ eligible orders to rank.` };
-  rankChart(document.getElementById("c-slowest"), slow, dayOpts);
-  rankChart(document.getElementById("c-fastest"), fast, dayOpts);
+    emptyMsg: `No state in this selection has ${MIN_RANK}+ eligible orders to rank.`,
+    dimLabel: "State", measure: "Avg delivery", views: ["bar", "dot", "column", "table"] };
+  draw("c-slowest", "rank", slow, dayOpts);
+  draw("c-fastest", "rank", fast, dayOpts);
 
   const regions = stateRows(idx, {
     metric: otdMetric, sort: (a, b) => b.value - a.value, col: D.region, key: "region",
@@ -961,14 +1134,23 @@ function renderGeo(idx) {
         ? `all clear the ${MIN_RANK}-order bar for ranking`
         : `${intText(regions.length - rankedRegions)} under ${MIN_RANK} eligible orders, listed but not ranked`)
     : "";
-  rankChart(document.getElementById("c-region"), regions,
-    { fmt: v => v.toFixed(1) + "%", lo: 80, hi: 100, labelW: 132, rowH: 26, gap: 12 });
+  draw("c-region", "rank", regions,
+    { fmt: v => v.toFixed(1) + "%", dotLo: 80, hi: 100, labelW: 132, rowH: 26, gap: 12,
+      dimLabel: "Region", measure: "On-time rate", views: ["bar", "dot", "column", "table"] });
 
+  // every state, not a top ten: the donut reads as share of all lateness, so the total it
+  // divides by has to be all of it
   const vol = stateRows(idx, {
     metric: g => { const s = otdStats(g); return { value: s.n ? s.late : null, n: s.n }; },
-    sort: (a, b) => b.value - a.value, limit: 10, rankFloor: 0, cls: "bar-bad",
+    sort: (a, b) => b.value - a.value, rankFloor: 0, cls: "bar-bad",
   });
-  rankChart(document.getElementById("c-latevol"), vol, { fmt: intText, labelW: 132, rowH: 22, gap: 9 });
+  draw("c-latevol", "rank", vol, {
+    fmt: intText, labelW: 132, rowH: 20, gap: 8, dimLabel: "State", measure: "late orders",
+    // a count of late deliveries does sum to a whole, so a share-of-lateness ring is honest here
+    views: ["bar", "column", "donut", "table"],
+    sliceCls: () => "bar-bad",
+    donutTotal: v => intText(v) + " late",
+  });
 
   const headroom = stateRows(idx, {
     metric: g => {
@@ -978,8 +1160,9 @@ function renderGeo(idx) {
     sort: (a, b) => a.value - b.value, limit: 10,
     cls: r => (r.value < 7 ? "bar-bad" : "bar-good"),
   });
-  rankChart(document.getElementById("c-headroom"), headroom, {
+  draw("c-headroom", "rank", headroom, {
     fmt: v => (v == null ? "—" : v.toFixed(1) + " d"), labelW: 132, rowH: 22, gap: 9,
+    dimLabel: "State", measure: "Headroom", views: ["bar", "dot", "column", "table"],
     caption: "Tightest promises first — less headroom leaves less room for a delay to stay inside the promise.",
   });
 }
@@ -1008,8 +1191,9 @@ function renderReviews(idx) {
     g => { const r = reviewStats(g); return { rate: r.lowRate, n: r.scored }; },
     m => (m.rate == null ? null : m.rate * 100));
   document.getElementById("s-lowtrend").textContent = trendSub(lowTrend, "reviews");
-  lineChart(document.getElementById("c-lowtrend"), lowTrend, {
+  draw("c-lowtrend", "line", lowTrend, {
     fmt: v => v.toFixed(1) + "%", every: Math.max(1, Math.ceil(lowTrend.length / 6)),
+    dimLabel: "Month", measure: "Low review rate",
     lo: 0, hi: 60, tone: "bad", flagAbove: 25,
     emptyMsg: `${intText(rev.scored)} reviews in this selection, spread over too few months to draw a trend.`,
   });
@@ -1024,8 +1208,9 @@ function renderReviews(idx) {
     }
     return { label, values: [pct(low, scored) == null ? null : pct(low, scored) * 100], n: [scored] };
   }).filter(g => g.n[0] > 0);
-  groupBars(document.getElementById("c-bydelay"), byDelay, [{ name: "Low review rate", cls: "bar-bad" }], {
+  draw("c-bydelay", "group", { groups: byDelay, series: [{ name: "Low review rate", cls: "bar-bad" }] }, {
     fmt: v => (v == null ? "—" : v.toFixed(1) + "%"), axisFmt: v => v + "%", max: 85,
+    dimLabel: "Lateness", measure: "Low review rate",
     ticks: [0, 20, 40, 60, 80], h: 258,
   });
 
@@ -1033,20 +1218,492 @@ function renderReviews(idx) {
     const n = rev.on[s] + rev.late[s];
     return { label: s + "★", values: [pct(n, rev.nOn + rev.nLate) == null ? null : pct(n, rev.nOn + rev.nLate) * 100], n: [n] };
   });
-  groupBars(document.getElementById("c-mix"), rev.nOn + rev.nLate ? mix : [],
-    [{ name: "Share of reviews", cls: "bar-mute" }], {
+  draw("c-mix", "group",
+    { groups: rev.nOn + rev.nLate ? mix : [], series: [{ name: "Share of reviews", cls: "bar-mute" }] }, {
       fmt: v => (v == null ? "—" : v.toFixed(1) + "%"), axisFmt: v => v + "%", max: 70,
+      dimLabel: "Review score", measure: "share of reviews",
       ticks: [0, 20, 40, 60], h: 258,
+      // these shares are one whole, so a ring and a stacked bar both read honestly
+      views: ["column", "stack100", "donut", "table"],
+      sliceCls: starTone,
+      donutTotal: () => "100%",
     });
 
   document.getElementById("s-lowstate").textContent =
     `Worst 10 states by share of 1★ and 2★ reviews · ${MIN_RANK}+ reviews to rank`;
-  rankChart(document.getElementById("c-lowstate"), stateRows(idx, {
+  draw("c-lowstate", "rank", stateRows(idx, {
     metric: g => { const r = reviewStats(g); return { value: r.lowRate == null ? null : r.lowRate * 100, n: r.scored }; },
     sort: (a, b) => b.value - a.value, limit: 10, cls: "bar-bad",
   }), {
     fmt: v => v.toFixed(1) + "%", labelW: 132, rowH: 22, gap: 9,
     emptyMsg: `No state in this selection has ${MIN_RANK}+ reviews to rank.`,
+    dimLabel: "State", measure: "Low review rate", views: ["bar", "dot", "column", "table"],
+  });
+}
+
+// Each chart card can be read as a chart or as the same numbers in a table. The model handed to
+// draw() is what both renderers consume, so the two views can never disagree on a figure.
+// Each card can be read several ways. Every renderer consumes the one model handed to draw(), so
+// no two views of a card can disagree about a number.
+const CHART_LABEL = {
+  bar: "Bar chart", dot: "Dot plot", column: "Column chart", line: "Line chart",
+  area: "Area chart", stack100: "100% stacked", donut: "Donut", table: "Table",
+};
+const VIEW_CODE = { bar: "b", dot: "p", column: "c", line: "l", area: "a", stack100: "s", donut: "d", table: "t" };
+const CODE_VIEW = Object.fromEntries(Object.entries(VIEW_CODE).map(([k, v]) => [v, k]));
+// A donut encodes parts of a whole, so it is only offered where the values sum to one. Rates do
+// not, and a truncated axis only reads honestly on position-encoded forms, so no bars on a trend.
+const KIND_VIEWS = {
+  rank: ["bar", "column", "table"],
+  line: ["line", "area", "table"],
+  group: ["column", "bar", "table"],
+};
+const KIND_DEFAULT = { rank: "bar", line: "line", group: "column" };
+const MAX_SLICES = 8;
+
+const starTone = row => {
+  const star = parseInt(row.label, 10);
+  if (!star) return "bar-mute";
+  return star <= 2 ? "bar-bad" : star === 3 ? "bar-mute" : "bar-good";
+};
+
+const cards = new Map();
+const views = new Map();
+const sorts = new Map();
+const donutPick = new Map();
+
+const viewsFor = spec => {
+  const list = spec.opts.views || KIND_VIEWS[spec.kind];
+  // a horizontal bar can only draw one series, so it is not offered where that would hide one
+  return spec.kind === "group" && spec.data.series.length > 1 ? list.filter(v => v !== "bar") : list;
+};
+const defaultView = spec => viewsFor(spec)[0] || KIND_DEFAULT[spec.kind];
+
+function viewOf(id) {
+  const spec = cards.get(id);
+  const want = views.get(id);
+  if (!spec) return want || "chart";
+  return want && viewsFor(spec).includes(want) ? want : defaultView(spec);
+}
+
+function draw(hostId, kind, data, opts) {
+  cards.set(hostId, { kind, data, opts });
+  paint(hostId);
+}
+
+function paint(hostId) {
+  const spec = cards.get(hostId);
+  const host = document.getElementById(hostId);
+  if (!spec || !host) return;
+  const view = viewOf(hostId);
+  const pick = host.closest(".t") && host.closest(".t").querySelector(".view-pick");
+  if (pick) pick.value = view;
+  const tuned = spec.opts.byView && spec.opts.byView[view]
+    ? { ...spec, opts: { ...spec.opts, ...spec.opts.byView[view] } }
+    : spec;
+  if (view === "table") renderTable(host, hostId, tuned);
+  else CHARTS[view](host, tuned, hostId);
+  host.classList.remove("swap");
+  void host.offsetWidth;
+  host.classList.add("swap");
+}
+
+/** Flatten any kind to ranked rows: label, value, n and the threshold flags. */
+function asRows(spec, seriesAt = 0) {
+  const { kind, data, opts } = spec;
+  if (kind === "rank") return data;
+  if (kind === "line") {
+    return data.map(p => ({ label: p.tip || p.label, value: p.value, n: p.n, thin: p.thin, cls: "bar-good" }));
+  }
+  const s = data.series[seriesAt];
+  return data.groups.map(g => ({
+    label: g.label, value: g.values[seriesAt], n: (g.n || [])[seriesAt],
+    thin: g.thin, rankable: g.rankable,
+    cls: (data.series.length === 1 && g.cls) || (s && s.cls),
+  }));
+}
+
+function asGroups(spec) {
+  const { kind, data, opts } = spec;
+  if (kind === "group") return data;
+  const rows = asRows(spec);
+  return {
+    groups: rows.map(r => ({ label: r.label, values: [r.value], n: [r.n], thin: r.thin, rankable: r.rankable, cls: r.cls })),
+    series: [{ name: opts.measure || "Value", cls: "bar-good" }],
+  };
+}
+
+
+/** Position encodes the value, so this is the view that may truncate its axis — the same licence a
+ *  line chart has, and the reason the bar view beside it starts at zero instead. */
+function dotPlot(host, rows, opts) {
+  if (!rows.length) return empty(host, opts.emptyMsg);
+  const w = opts.w || 700, valueW = 56, countW = opts.countW ?? 52;
+  const rowH = Math.max(22, opts.rowH ?? 22);
+  // the scale sits above the rows: these lists scroll, and a bottom axis scrolls out of sight
+  const top = 28;
+  const h = rows.length * rowH + top + 8;
+  const svg = canvas(host, w, h);
+  const labelW = labelGutter(svg, rows.map(r => r.label), opts.labelW ?? 132, w * 0.42);
+  const plotW = w - labelW - valueW - countW;
+
+  const values = rows.map(r => r.value).filter(v => v != null);
+  const lo = opts.dotLo ?? Math.max(0, Math.floor(Math.min(...values) / 5) * 5 - 2);
+  const hi = opts.hi ?? Math.ceil(Math.max(...values) / 5) * 5;
+  const x = v => labelW + ((v - lo) / (hi - lo || 1)) * plotW;
+
+  const step = (hi - lo) <= 25 ? 5 : (hi - lo) <= 60 ? 10 : 25;
+  for (let t = Math.ceil(lo / step) * step; t <= hi; t += step) {
+    svg.append(el("line", { class: "grid-line", x1: x(t), x2: x(t), y1: top - 6, y2: top + rows.length * rowH }));
+    svg.append(el("text", { class: "axis-text", x: x(t), y: 14, "text-anchor": "middle" }, opts.fmt(t)));
+  }
+
+  rows.forEach((d, i) => {
+    const cy = top + i * rowH + rowH / 2;
+    svg.append(el("line", { class: "dot-rule", x1: labelW, x2: labelW + plotW, y1: cy, y2: cy }));
+    svg.append(el("text", { class: "row-label", x: labelW - 8, y: cy + 4, "text-anchor": "end" }, d.label));
+    if (d.value != null) {
+      svg.append(el("circle", {
+        class: "bar " + (d.cls || "bar-good"), cx: x(d.value), cy, r: d.thin ? 4 : 5.5,
+        opacity: d.rankable === false ? 0.45 : 1,
+        "data-tip": `${d.label}${d.sub ? ` (${d.sub})` : ""}: ${opts.fmt(d.value)}`
+          + (d.n != null ? ` · n=${intText(d.n)}` : "") + (d.rankable === false ? " · below the ranking floor" : ""),
+      }));
+      svg.append(el("text", { class: "value-text", x: labelW + plotW + 8, y: cy + 4 }, opts.fmt(d.value)));
+    }
+    if (d.n != null) {
+      svg.append(el("text", { class: "count-text", x: w - 4, y: cy + 4, "text-anchor": "end" },
+        d.rankable === false ? `n=${intText(d.n)} low` : intText(d.n)));
+    }
+  });
+  return svg;
+}
+
+/** Round the axis top up to a readable step so a derived column view gets sane gridlines. */
+function niceMax(value, steps = 4) {
+  if (!(value > 0)) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(value / steps)));
+  const step = [1, 2, 2.5, 5, 10].find(m => m * mag >= value / steps) * mag;
+  return step * steps;
+}
+
+function columnChart(host, { groups, series }, opts) {
+  if (!groups.length) return empty(host, opts.emptyMsg);
+  const many = groups.length > 10;
+  const w = opts.w || 700, h = (opts.h || 258) + (many ? 34 : 0);
+  const box = { x: 46, y: 10, w: w - 60, h: h - (many ? 86 : 52) };
+  const svg = canvas(host, w, h);
+  const max = opts.max ?? niceMax(Math.max(1, ...groups.flatMap(g => g.values.map(v => v ?? 0))));
+  const y = v => box.y + (max - v) / max * box.h;
+  (opts.ticks || [0, max / 2, max]).forEach(g => {
+    svg.append(el("line", { class: "grid-line", x1: box.x, x2: box.x + box.w, y1: y(g), y2: y(g) }));
+    svg.append(el("text", { class: "axis-text", x: box.x - 8, y: y(g) + 4, "text-anchor": "end" },
+      (opts.axisFmt || opts.fmt)(g)));
+  });
+
+  const slot = box.w / groups.length;
+  const bw = Math.min(opts.barW || 34, (slot * 0.68) / series.length);
+  const barX = (centre, si) => centre + (si - (series.length - 1) / 2) * (bw + 4) - bw / 2;
+  groups.forEach((g, gi) => {
+    const centre = box.x + slot * (gi + 0.5);
+    g.values.forEach((v, si) => {
+      const x = barX(centre, si);
+      svg.append(el("rect", {
+        class: "bar " + (series.length === 1 && g.cls ? g.cls : series[si].cls),
+        x, y: y(v ?? 0), width: bw, height: Math.max(2, (box.y + box.h) - y(v ?? 0)), rx: 4,
+        opacity: g.thin ? 0.45 : 0.9,
+        "data-tip": `${series[si].name} — ${g.label}: ${opts.fmt(v)}`
+          + ((g.n || [])[si] != null ? ` · n=${intText(g.n[si])}` : "")
+          + (g.rankable === false ? " · below the ranking floor" : ""),
+      }));
+    });
+    if (opts.showValues) {
+      g.values.forEach((v, si) => {
+        svg.append(el("text", {
+          class: "value-text", x: barX(centre, si) + bw / 2, y: y(v ?? 0) - 7, "text-anchor": "middle",
+        }, opts.fmt(v)));
+      });
+    }
+    const label = el("text", { class: "row-label", x: centre, y: box.y + box.h + 16, "text-anchor": many ? "end" : "middle" }, g.label);
+    if (many) label.setAttribute("transform", `rotate(-45 ${centre} ${box.y + box.h + 16})`);
+    svg.append(label);
+    if (opts.showValues && (g.n || []).length) {
+      svg.append(el("text", { class: "count-text", x: centre, y: box.y + box.h + 31, "text-anchor": "middle" },
+        g.n.map((v, i) => `${series.length > 1 ? series[i].name.split(" ")[0] + " " : "n="}${intText(v)}`).join(" · ")));
+    }
+  });
+  return svg;
+}
+
+/** Bars are the series, segments are the categories — the thing that sums to a whole. */
+function stackChart(host, { groups, series }, opts) {
+  if (!groups.length) return empty(host, opts.emptyMsg);
+  const w = opts.w || 700, rowH = 38, gap = 18, left = 96;
+  const h = series.length * (rowH + gap) + 44;
+  const svg = canvas(host, w, h);
+  const barW = w - left - 16;
+
+  series.forEach((s, si) => {
+    const y = si * (rowH + gap) + 6;
+    const total = groups.reduce((acc, g) => acc + (g.values[si] ?? 0), 0) || 1;
+    let x = left;
+    svg.append(el("text", { class: "row-label", x: left - 8, y: y + rowH / 2 + 4, "text-anchor": "end" }, s.name));
+    groups.forEach((g, gi) => {
+      const share = (g.values[si] ?? 0) / total;
+      const segW = share * barW;
+      if (segW <= 0) return;
+      svg.append(el("rect", {
+        class: "bar " + sliceTone(g, gi, opts), x, y, width: segW, height: rowH,
+        opacity: 0.9,
+        "data-tip": `${s.name} — ${g.label}: ${opts.fmt(g.values[si])}`
+          + ((g.n || [])[si] != null ? ` · n=${intText(g.n[si])}` : ""),
+      }));
+      if (share > 0.08) {
+        svg.append(el("text", { class: "seg-text", x: x + segW / 2, y: y + rowH / 2 + 4, "text-anchor": "middle" }, g.label));
+      }
+      x += segW;
+    });
+  });
+
+  const legend = el("g", {});
+  groups.forEach((g, gi) => {
+    const lx = left + gi * Math.min(110, barW / groups.length);
+    legend.append(el("rect", { class: sliceTone(g, gi, opts), x: lx, y: h - 22, width: 9, height: 9, rx: 2 }));
+    legend.append(el("text", { class: "axis-text", x: lx + 13, y: h - 14 }, g.label));
+  });
+  svg.append(legend);
+  return svg;
+}
+
+function sliceTone(row, i, opts) {
+  if (opts.sliceCls) return opts.sliceCls(row, i);
+  return "bar-mute";
+}
+
+/** Slices are real annulus paths rather than a dashed stroke, so the fill-based tone classes the
+ *  rest of the page uses apply directly and the ring actually has a hole in it. */
+function arcPath(cx, cy, outer, inner, from, to) {
+  const at = (r, a) => `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
+  const wide = to - from > Math.PI ? 1 : 0;
+  return `M${at(outer, from)} A${outer} ${outer} 0 ${wide} 1 ${at(outer, to)}`
+    + ` L${at(inner, to)} A${inner} ${inner} 0 ${wide} 0 ${at(inner, from)} Z`;
+}
+
+function donutChart(host, spec, hostId) {
+  const { data, opts } = spec;
+  const multi = spec.kind === "group" && data.series.length > 1;
+  const at = multi ? (donutPick.get(hostId) || 0) : 0;
+  const rows = asRows(spec, at).filter(r => r.value != null && r.value > 0);
+  if (!rows.length) return empty(host, opts.emptyMsg);
+
+  const sorted = rows.slice().sort((a, b) => b.value - a.value);
+  // a long tail becomes confetti, so the remainder is pooled into one honest slice, kept last
+  const slices = sorted.length > MAX_SLICES
+    ? [...sorted.slice(0, MAX_SLICES - 1), {
+        label: "Other", value: sorted.slice(MAX_SLICES - 1).reduce((a, r) => a + r.value, 0),
+        n: sorted.slice(MAX_SLICES - 1).reduce((a, r) => a + (r.n || 0), 0), other: true,
+      }]
+    : sorted;
+  const total = slices.reduce((a, r) => a + r.value, 0) || 1;
+  const tones = slices.map((row, i) => sliceTone(row, i, opts));
+  const ramp = new Set(tones).size === 1;
+  const shade = (row, i) => (row.other ? 0.3 : ramp ? 0.95 - i * 0.085 : 0.92);
+  // when the measure is already a share of this same whole, the value and share columns would
+  // print the same number twice
+  const valueIsShare = Math.abs(total - 100) < 0.5;
+
+  const w = 700, cx = 158, cy = 154, outer = 112, inner = 67;
+  const legendX = 318, rowGap = 26;
+  const h = Math.max(cy + outer + 18, 34 + slices.length * rowGap);
+  const svg = canvas(host, w, h);
+  const pad = 0.014;
+  let angle = -Math.PI / 2;
+
+  slices.forEach((row, i) => {
+    const sweep = (row.value / total) * Math.PI * 2;
+    const to = angle + Math.max(sweep - pad, sweep * 0.55);
+    svg.append(el("path", {
+      class: "slice " + tones[i],
+      d: arcPath(cx, cy, outer, inner, angle, Math.min(to, angle + Math.PI * 2 - 0.002)),
+      opacity: shade(row, i),
+      "data-tip": `${row.label}: ${opts.fmt(row.value)} · ${pctText(row.value / total)} of total`
+        + (row.n != null ? ` · n=${intText(row.n)}` : ""),
+    }));
+    // only label a slice wide enough to hold the text inside the band
+    if (sweep > 0.42) {
+      const mid = angle + sweep / 2;
+      svg.append(el("text", {
+        class: "slice-text", x: cx + Math.cos(mid) * (outer + inner) / 2,
+        y: cy + Math.sin(mid) * (outer + inner) / 2 + 4, "text-anchor": "middle",
+      }, pctText(row.value / total, 0)));
+    }
+    angle += sweep;
+  });
+
+  svg.append(el("text", { class: "donut-total", x: cx, y: cy + 2, "text-anchor": "middle" },
+    opts.donutTotal ? opts.donutTotal(total) : opts.fmt(total)));
+  svg.append(el("text", { class: "axis-text", x: cx, y: cy + 22, "text-anchor": "middle" },
+    opts.measure || "total"));
+
+  slices.forEach((row, i) => {
+    const y = 34 + i * rowGap;
+    svg.append(el("rect", {
+      class: tones[i], x: legendX, y: y - 9, width: 10, height: 10, rx: 2, opacity: shade(row, i),
+    }));
+    svg.append(el("text", { class: "row-label", x: legendX + 16, y }, row.label));
+    svg.append(el("text", { class: "value-text", x: 586, y, "text-anchor": "end" }, opts.fmt(row.value)));
+    if (!valueIsShare) {
+      svg.append(el("text", { class: "axis-text", x: 644, y, "text-anchor": "end" }, pctText(row.value / total)));
+    }
+    svg.append(el("text", { class: "count-text", x: w - 4, y, "text-anchor": "end" },
+      row.n == null ? "" : (row.rankable === false ? `n=${intText(row.n)} low` : `n=${intText(row.n)}`)));
+  });
+
+  if (multi) {
+    const switcher = div("donut-switch");
+    data.series.forEach((s, i) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = s.name;
+      b.className = i === at ? "on" : "";
+      b.setAttribute("aria-pressed", String(i === at));
+      b.addEventListener("click", () => { donutPick.set(hostId, i); paint(hostId); });
+      switcher.append(b);
+    });
+    host.prepend(switcher);
+  }
+  return svg;
+}
+
+const CHARTS = {
+  bar: (host, spec) => rankChart(host, asRows(spec), spec.opts),
+  dot: (host, spec) => dotPlot(host, asRows(spec), spec.opts),
+  column: (host, spec) => columnChart(host, asGroups(spec), spec.opts),
+  line: (host, spec) => lineChart(host, spec.data, spec.opts),
+  area: (host, spec) => lineChart(host, spec.data, { ...spec.opts, area: true }),
+  stack100: (host, spec) => stackChart(host, asGroups(spec), spec.opts),
+  donut: (host, spec, hostId) => donutChart(host, spec, hostId),
+};
+
+/** One row shape for every chart kind, so the table never reformats a number differently. */
+function tableModel(kind, data, opts) {
+  const nCol = { label: "n", get: r => r.n, fmt: intText, num: true };
+  if (kind === "rank" || kind === "line") {
+    const rows = data.map(d => ({
+      label: (d.tip || d.label) + (d.sub ? ` (${d.sub})` : ""),
+      value: d.value, n: d.n, weak: !!d.thin, unranked: d.rankable === false,
+    }));
+    return {
+      cols: [
+        { label: opts.dimLabel || "Name", get: r => r.label, fmt: v => v },
+        { label: opts.measure || "Value", get: r => r.value, fmt: opts.fmt, num: true },
+        nCol,
+      ],
+      rows,
+    };
+  }
+  const { groups, series } = data;
+  const single = series.length === 1;
+  const rows = groups.map(g => ({
+    label: g.label, values: g.values, ns: g.n || [], weak: !!g.thin, unranked: g.rankable === false,
+  }));
+  const cols = [{ label: opts.dimLabel || "Group", get: r => r.label, fmt: v => v }];
+  series.forEach((s, i) => cols.push({
+    label: single ? (opts.measure || s.name) : s.name,
+    get: r => r.values[i],
+    fmt: opts.fmt,
+    num: true,
+  }));
+  if (single) cols.push({ label: "n", get: r => (r.ns[0] ?? null), fmt: intText, num: true });
+  else series.forEach((s, i) => cols.push({ label: `n (${s.name})`, get: r => (r.ns[i] ?? null), fmt: intText, num: true }));
+  return { cols, rows };
+}
+
+function renderTable(host, hostId, spec) {
+  const model = tableModel(spec.kind, spec.data, spec.opts);
+  if (!model.rows.length) return empty(host, spec.opts.emptyMsg);
+
+  const sort = sorts.get(hostId);
+  const rows = model.rows.slice();
+  if (sort) {
+    const col = model.cols[sort.col];
+    rows.sort((a, b) => {
+      const x = col.get(a), y = col.get(b);
+      if (x == null) return 1;
+      if (y == null) return -1;
+      const cmp = col.num ? x - y : String(x).localeCompare(String(y), "pt-BR");
+      return sort.dir === "asc" ? cmp : -cmp;
+    });
+  }
+
+  const table = document.createElement("table");
+  table.className = "view-table";
+  const head = table.createTHead().insertRow();
+  model.cols.forEach((col, i) => {
+    const th = document.createElement("th");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "th-sort";
+    btn.textContent = col.label;
+    if (col.num) th.className = "num";
+    if (sort && sort.col === i) {
+      btn.append(document.createTextNode(sort.dir === "asc" ? " ↑" : " ↓"));
+      th.setAttribute("aria-sort", sort.dir === "asc" ? "ascending" : "descending");
+    }
+    btn.addEventListener("click", () => {
+      const now = sorts.get(hostId);
+      // a third click returns to the chart's own order, so the views stay comparable
+      if (now && now.col === i && now.dir === "desc") sorts.delete(hostId);
+      else if (now && now.col === i && now.dir === "asc") sorts.set(hostId, { col: i, dir: "desc" });
+      else sorts.set(hostId, { col: i, dir: "asc" });
+      paint(hostId);
+    });
+    th.append(btn);
+    head.append(th);
+  });
+
+  const body = table.createTBody();
+  rows.forEach(r => {
+    const tr = body.insertRow();
+    if (r.weak) tr.className = "weak";
+    model.cols.forEach((col, i) => {
+      const td = tr.insertCell();
+      if (col.num) td.className = "num";
+      const v = col.get(r);
+      td.textContent = v == null ? "—" : col.fmt(v);
+      // the ranking floor applies here too; a sortable column is not a way around it
+      if (i === model.cols.length - 1 && r.unranked) {
+        td.append(Object.assign(document.createElement("span"), {
+          className: "flag", textContent: " not ranked",
+        }));
+      }
+    });
+  });
+
+  const wrap = div("table-wrap");
+  wrap.append(table);
+  host.replaceChildren(wrap);
+  return table;
+}
+
+function buildViewPickers() {
+  cards.forEach((spec, hostId) => {
+    const card = document.getElementById(hostId).closest(".t");
+    const headEl = card && card.querySelector(".card-head");
+    if (!headEl || headEl.querySelector(".view-pick")) return;
+    const pick = document.createElement("select");
+    pick.className = "view-pick";
+    pick.setAttribute("aria-label", "View this card as");
+    viewsFor(spec).forEach(v => pick.append(new Option(CHART_LABEL[v], v)));
+    pick.value = viewOf(hostId);
+    pick.addEventListener("change", () => {
+      if (pick.value === defaultView(spec)) views.delete(hostId);
+      else views.set(hostId, pick.value);
+      sorts.delete(hostId);
+      paint(hostId);
+      writeState(false);
+    });
+    headEl.append(pick);
   });
 }
 
@@ -1059,7 +1716,7 @@ const PAGES = {
   sellers: {
     render: renderSellers,
     tiles: [["k-spread", "Best to worst seller", true], ["k-ranked", "Sellers ranked"], ["k-median", "Median seller late rate"]],
-    plots: ["c-worstsell", "c-bestsell", "c-sellerstate", "c-crossstate"],
+    plots: ["c-worstsell", "c-bestsell", "c-sellerstate", "c-crossstate", "c-approval", "c-approvalband"],
   },
   geo: {
     render: renderGeo,
@@ -1085,6 +1742,8 @@ function drawPage(name) {
       return;
     }
     page.render(view);
+    // tabs draw lazily, so a page's cards only register on its first paint
+    buildViewPickers();
   } catch (err) {
     // a failed tab must not leave shimmering placeholders behind
     page.tiles.forEach(([id, lab, big]) => tile(id, { lab, value: "—", big: !!big }));
@@ -1186,6 +1845,7 @@ function boot() {
     wireTabs();
     wireTips();
     render();
+    buildViewPickers();
     ready = true;
     firstPaint = false;
   } catch (err) {

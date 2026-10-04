@@ -29,6 +29,7 @@ DICT_COLS = {
     "category": "Product_Category",
     "payment": "Payment_Type",
     "status": "Order_Status",
+    "abucket": "Approval_Bucket",
 }
 # two chars per row, stored as value+1 so 0 stays free for null
 WIDE_COLS = {"actual": "Actual_Delivery_Hours", "promised": "Promised_Delivery_Hours"}
@@ -198,6 +199,15 @@ def main():
     print(f"{path} -> {OUT} ({len(orders)} rows, {OUT.stat().st_size / 1024:.0f} KB)")
     for name, value in kpis(orders).items():
         print(f"  {name}: {value}")
+
+    num2 = orders[["Is_Sla_Eligible", "Is_On_Time"]].apply(pd.to_numeric, errors="coerce")
+    elig2 = orders[num2.Is_Sla_Eligible == 1]
+    print("  breach by approval bucket:")
+    for b in ["0-1h", "1-6h", "6-24h", ">24h", "Unknown"]:
+        g = elig2[elig2.Approval_Bucket == b]
+        if len(g):
+            breach = (1 - pd.to_numeric(g.Is_On_Time).mean()) * 100
+            print(f"    {b:<8} {len(g):>6}  {breach:.2f}%")
 
     region = orders.Customer_State.map(lambda c: states.get(c, [None, None])[1])
     eligible = orders[pd.to_numeric(orders.Is_Sla_Eligible, errors="coerce") == 1]

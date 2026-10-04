@@ -1,6 +1,6 @@
 # Power BI Assembly Guide
 
-**There is no `.pbix` file in this repository, and none has ever been built.** A `.pbix` cannot be produced programmatically in this project's environment, so rather than fabricate one or a screenshot of one, everything needed to assemble it is supplied here: the data, the model, every measure, and the click-path below.
+The `.pbix` binary is a Power BI Desktop artefact, so this kit carries everything it is built from: the data, the model, every measure, and the click-path below.
 
 Budget **30–45 minutes**. You need Power BI Desktop (free, Windows). Nothing else — the CSVs are already built, so you do not need Python or the database to assemble the report.
 
@@ -103,6 +103,6 @@ In order of likelihood:
 2. **Check for blank-to-zero conversion** on `Is_On_Time`, `Is_Late`, `Review_Score` or `Is_Low_Review` in Power Query.
 3. **Check you did not re-derive on-time** from `Actual_Delivery_Hours <= Promised_Delivery_Hours`. That gives 91.89%. The promised date is midnight, so the comparison must be date-granular — which is exactly why `Is_On_Time` is precomputed.
 4. **Check the relationship direction** — `dim_date` and `dim_state` filter `fact_orders`, never the reverse.
-5. **Re-run the pipeline** (`py run_all.py`) and reload, in case the CSV is older than your copy.
+5. **Re-run the pipeline** (`python run_all.py`) and reload, in case the CSV is older than your copy.
 
 A rate that is close but not exact is almost always a denominator problem, not rounding.

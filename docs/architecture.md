@@ -13,7 +13,7 @@ under `sql/`.
 ```
                  Kaggle  olistbr/brazilian-ecommerce   CC BY-NC-SA 4.0
                               |
-                              |  HTTPS GET, HTTP Basic from .env
+                              |  downloaded archive
                               v
    database/fetch_data.py --> data/external/                9 CSVs, 164 MB, gitignored
                               |
@@ -72,13 +72,11 @@ imports from it. Nothing it defines is defined a second time anywhere else — s
 
 ### `database/fetch_data.py`
 
-Reads `.env`, authenticates against the Kaggle download endpoint and unpacks the nine CSVs into
-`data/external/`. If `data/external/dataset.zip` already exists it skips the download entirely and
-just unpacks, which is also the manual fallback when there is no Kaggle account.
+Unpacks `data/external/dataset.zip` into `data/external/`. If the nine CSVs are already there it
+does nothing.
 
-**Fails on:** no credentials in the environment or `.env` (a message naming both accepted forms and
-the manual path); an HTTP error, with a credentials hint on 401/403; a response body that does not
-start with `PK`, which is what a sign-in HTML page looks like when a cookie has expired.
+**Fails on:** no archive and no extracted CSVs, with a message naming the dataset, the download page
+and the path the archive belongs at.
 
 ### `database/clean_data.py`
 
@@ -235,7 +233,7 @@ the encoding.
 | **pandas** for cleaning, SQL for analysis | Cleaning is row-wise conditional nulling across five timestamp columns, which is far clearer in pandas. Analysis is grouped aggregation with explicit denominators, which is what SQL is for | Two languages in one pipeline. The join between them is the cleaned CSV, which is readable from both |
 | **openpyxl**, formulas not pasted values | A workbook of pasted numbers is a screenshot with gridlines. Live formulas on every KPI sheet mean a reader can change a filter and watch the number move | All 99,441 rows have to sit on a sheet, so the file is 26 MB and the build takes minutes. openpyxl also cannot evaluate formulas, which is why reconciliation checks the workbook's inputs |
 | **Dependency-free HTML dashboard** | Opens by double-click: no server, no install, no network. A chart library would have meant a bundler or a CDN, and a CDN means the page stops working offline | The payload has to be hand-packed to fit, and every chart is hand-written inline SVG |
-| **A Power BI kit, not a `.pbix`** | A `.pbix` cannot be produced without Power BI Desktop, and publishing a screenshot of a report that was never assembled would be a fabrication. The kit is the measure definitions, the dashboard specification, the bound extracts and a click-path | The reader has to spend 30–45 minutes assembling it, and `screenshots/` stays empty, deliberately |
+| **A Power BI kit, not a `.pbix`** | The `.pbix` binary is a Power BI Desktop artefact and cannot be generated from the pipeline, so the kit carries what it is built from: the measure definitions, the dashboard specification, the bound extracts and a click-path | Assembly takes 30–45 minutes in Power BI Desktop |
 | **`.js` payload, not `.json`** | `fetch()` on a local file is blocked under `file://`, so the data arrives as a `window.FACT_ORDERS` assignment loaded by a `<script>` tag | It cannot be consumed by a generic JSON reader without stripping the assignment, which `reconcile.py` does by slicing between the first `{` and the last `}` |
 
 ---
@@ -254,8 +252,7 @@ the encoding.
 | `dashboard/data/dashboard_data.js` | 1.33 MB | **Yes** | The dashboard must open by double-click from a clone |
 | `excel/delivery_sla_olist_marketplace.xlsx` | 26 MB | **Yes** | The deliverable itself |
 | `powerbi/data/dim_date.csv`, `dim_state.csv` | 26 KB | **Yes** | Small bound extracts. The fact table is **not** duplicated here; the report binds to `data/processed/fact_orders.csv` |
-| `.env` | — | **No** | Credentials. `.env.example` is the only committed variant, and no script ever prints a credential |
-| `*.pbix` | — | **No** | None exists; the ignore rule is there so a locally assembled report cannot be committed by accident |
+| `*.pbix` | — | **No** | A build artefact of Power BI Desktop, assembled locally from `powerbi/` |
 
 The rule behind the table: **commit what a reader needs to verify a claim, rebuild everything else.**
 The raw third-party data and the database are large and rebuildable; the mart, the issue log and the

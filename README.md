@@ -23,61 +23,39 @@ pass.
 |---|---|
 | Python | 3.12 |
 | Packages | `pip install -r requirements.txt` — pandas 3.0.6, numpy 2.5.3, openpyxl 3.1.5 |
-| Database | SQLite, via Python's bundled `sqlite3` module. **No server and no `sqlite3` CLI are needed.** |
-| Data access | A free **Kaggle account and API token** — the source dataset is downloaded, not committed |
-| Excel | Only needed to *open* the workbook; it is built with openpyxl |
+| Database | SQLite, via Python's bundled `sqlite3` module |
+| Excel | Only to open the workbook; it is built with openpyxl |
 
 ## Getting the data
 
-The source dataset is third-party licensed and 164 MB unpacked, so `data/external/` is gitignored and
-nothing from it is redistributed here. `database/fetch_data.py` downloads it for you.
+The analysis runs on the **Brazilian E-Commerce Public Dataset by Olist**, published on Kaggle as
+[`olistbr/brazilian-ecommerce`](https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce).
 
-1. Copy `.env.example` to `.env`.
-2. On kaggle.com go to **Settings → API → Create New API Token**. That downloads a `kaggle.json`
-   holding a username and a key.
-3. Put them in `.env`:
-   ```
-   KAGGLE_USERNAME=your-kaggle-username
-   KAGGLE_KEY=your-api-key
-   ```
-
-`.env` is gitignored (`.env.example` is the only committed variant) and credentials are never written to
-any output. A `KAGGLE_COOKIE` fallback exists for environments where the token is unavailable, but it has
-broader scope and expires sooner, so prefer the token.
-
-**No Kaggle access?** Download `olistbr/brazilian-ecommerce` manually, save the archive as
-`data/external/dataset.zip`, and `fetch_data.py` will unpack that instead of downloading.
+It is third-party licensed and 164 MB unpacked, so it is not committed here. Download it, save the
+archive as `data/external/dataset.zip`, and the pipeline unpacks it. Extracted CSVs placed directly in
+`data/external/` work too.
 
 ## How to run
 
 ```
 pip install -r requirements.txt
-py run_all.py
+python run_all.py
 ```
 
-On Windows, a bare `python` often resolves to the Microsoft Store alias stub rather than a real
-interpreter. The `py` launcher or an explicit path to `python.exe` avoids that; `python run_all.py` is
-fine wherever `python` reaches a real 3.12.
-
-`run_all.py` runs seven steps in order, printing a banner and an elapsed time for each, and stops the
-whole run on the first non-zero exit code:
+Seven steps run in order, stopping on the first failure:
 
 | Step | What it does |
 |---|---|
-| `database/fetch_data.py` | Downloads and unpacks the dataset into `data/external/` (9 CSVs) |
+| `database/fetch_data.py` | Unpacks the dataset into `data/external/` (9 CSVs) |
 | `database/clean_data.py` | Applies 15 data-quality rules, writes `data/processed/` and `dq_issue_log.csv` |
-| `database/load_data.py` | Rebuilds `database/olist.db`, parents first, foreign keys enforced, row counts asserted |
+| `database/load_data.py` | Rebuilds `database/olist.db`, foreign keys enforced, row counts asserted |
 | `database/run_queries.py` | Runs `sql/01`–`sql/07`, exports each result set to `data/processed/query_outputs/` and the mart to `fact_orders.csv` |
 | `dashboard/build_dashboard_data.py` | Packs the mart into `dashboard/data/dashboard_data.js` |
 | `excel/build_workbook.py` | Builds `excel/delivery_sla_olist_marketplace.xlsx` |
 | `database/reconcile.py` | Recomputes 8 headline KPIs from 4 independent sources and asserts they agree |
 
-Each step prints progress and row counts — table loads, query output names with their row counts, the
-KPIs each builder computed — and raises rather than warning when a count or an invariant fails.
-
-**The Excel build is the slow step**, several minutes on a normal machine, because the workbook carries
-all 99,441 order rows on its `Clean_Data` sheet and every summary sheet reads them through live formulas.
-The resulting file is about 26 MB. Nothing else in the pipeline takes more than a fraction of that.
+Every step prints row counts and raises on a failed count or invariant. The Excel build takes a few
+minutes — the workbook carries all 99,441 rows with live formulas over them, and comes to about 26 MB.
 
 ## Repo map
 
@@ -92,7 +70,7 @@ The resulting file is about 26 MB. Nothing else in the pipeline takes more than 
 | `powerbi/` | The Power BI assembly kit — measure definitions, the click-path and the extracts the report binds to. **No `.pbix`.** |
 | `reports/` | `business_findings.md`, `data_quality_report.md`, `reconciliation.md`, `decisions.md` |
 | `docs/` | Project documentation (you are in it) |
-| `screenshots/` | Intentionally empty — see below |
+| `screenshots/` | Dashboard captures |
 
 ## Key findings
 
@@ -162,12 +140,11 @@ reading notes are in [`dashboard/README.md`](dashboard/README.md).
 definition, a flagged raw sample, the full 99,441-row `Clean_Data` table, a KPI dashboard and five
 summary sheets, the data-quality log and a How-To for building your own pivots. **Every KPI is a live
 formula over `Clean_Data`, not a pasted value** — change a filter and the numbers move. Rebuild it with
-`py excel/build_workbook.py`.
+`python excel/build_workbook.py`.
 
 **The Power BI kit** — `powerbi/` holds the measure definitions, the data the report binds to and a
-click-path for assembling the report. **No `.pbix` file is included.** Assembling it is a documented
-manual build of roughly 30–45 minutes. `screenshots/` is deliberately empty for the same reason:
-publishing an image of a report that was never built would misrepresent the work.
+click-path for assembling the report. The `.pbix` is built in Power BI Desktop from those assets in
+about 30–45 minutes.
 
 ## Licence and attribution
 

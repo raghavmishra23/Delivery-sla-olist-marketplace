@@ -1,4 +1,7 @@
 :root {
+  /* tells the browser to paint native scrollbars, form controls and focus rings dark */
+  color-scheme: dark;
+
   --bg: #0E1012;
   --surface: #16191C;
   --surface-2: #1D2125;
@@ -46,6 +49,8 @@
 }
 
 :root[data-theme="light"] {
+  color-scheme: light;
+
   --bg: #F3F4F1;
   --surface: #FFFFFF;
   --surface-2: #F8F9F6;
@@ -71,6 +76,16 @@
 }
 
 * { box-sizing: border-box; }
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--label); }
 
 body {
   margin: 0;
@@ -179,8 +194,10 @@ h1 span { color: var(--label); font-weight: 400; }
 :root[data-theme="light"] .icon.moon { display: none; }
 :root[data-theme="light"] .icon.sun { display: block; }
 
-.filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s3) var(--s5); padding: var(--s5) 0; }
-.filter { display: flex; flex-direction: column; gap: var(--s1); }
+/* Eight controls plus Reset only fit on one row if each may shrink; min-width:0 is what actually
+   permits that, since a flex item defaults to min-width:auto and refuses to go below its content. */
+.filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s3) var(--s4); padding: var(--s5) 0; }
+.filter { display: flex; flex-direction: column; gap: var(--s1); flex: 1 1 0; min-width: 0; }
 
 .filter label, .flabel, .lab {
   font-size: var(--fs-micro);
@@ -203,12 +220,12 @@ select, #reset {
 }
 
 /* Matches .ms-btn so the month pickers and the multi-selects line up in the same row. */
-select { min-width: 170px; }
+.filter select { width: 100%; min-width: 0; }
 select:hover, #reset:hover {
   border-color: var(--label);
   background: color-mix(in srgb, var(--ink) 6%, var(--surface-2));
 }
-#reset { cursor: pointer; padding: 7px var(--s4); }
+#reset { flex: none; cursor: pointer; padding: 7px var(--s4); align-self: flex-end; }
 
 :is(select, button):focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
 
@@ -218,9 +235,9 @@ select:hover, #reset:hover {
   display: flex;
   align-items: center;
   gap: var(--s2);
-  min-width: 170px;
-  min-height: 44px;
   width: 100%;
+  min-width: 0;
+  min-height: 44px;
   font: inherit;
   font-size: var(--fs-body);
   text-align: left;
@@ -359,6 +376,115 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 .h { font-size: var(--fs-title); font-weight: 650; margin-bottom: 3px; }
 .hs { font-size: 11px; color: var(--muted); margin-bottom: var(--s3); }
 
+.card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  margin-bottom: var(--s3);
+}
+
+/* min-width:0 lets the title block shrink and wrap at word boundaries instead of one word a line */
+.card-head > div:first-child { flex: 1 1 auto; min-width: 0; }
+
+.card-head .hs { margin-bottom: 0; }
+
+.view-pick {
+  flex: 0 0 auto;
+  width: 142px;
+  max-width: 142px;
+  min-height: 44px;
+  font-family: inherit;
+  font-size: var(--fs-cap);
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: border-color var(--quick) var(--ease-out);
+}
+
+.view-pick:hover { border-color: var(--label); }
+.view-pick:focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
+
+.table-wrap { max-height: 340px; overflow-y: auto; }
+
+table.view-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-cap);
+  font-variant-numeric: tabular-nums;
+}
+
+table.view-table th {
+  position: sticky;
+  top: 0;
+  background: var(--surface);
+  text-align: left;
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+table.view-table th.num, table.view-table td.num { text-align: right; }
+table.view-table th.num .th-sort { justify-content: flex-end; }
+
+.th-sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  font: inherit;
+  font-size: var(--fs-micro);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--label);
+  background: none;
+  border: none;
+  padding: var(--s2) 6px;
+  cursor: pointer;
+}
+
+.th-sort:hover { color: var(--ink); }
+.th-sort:focus-visible { outline: 2px solid var(--good); outline-offset: -2px; }
+
+table.view-table td {
+  padding: 7px 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--ink);
+}
+
+table.view-table tbody tr:hover td { background: var(--surface-2); }
+table.view-table tr.weak td { color: var(--label); }
+.flag { color: var(--label); font-size: var(--fs-micro); text-transform: uppercase; letter-spacing: 0.06em; }
+
+.slice { stroke: var(--surface); stroke-width: 1; }
+.slice-text { font-size: 10px; font-weight: 700; fill: var(--ink); }
+.donut-total { font-size: 22px; font-weight: 680; fill: var(--ink); }
+.seg-text { font-size: 10px; font-weight: 600; fill: var(--surface); }
+
+.donut-switch { display: flex; gap: var(--s1); margin-bottom: var(--s2); }
+
+.donut-switch button {
+  font: inherit;
+  font-size: var(--fs-cap);
+  color: var(--label);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 7px 12px;
+  min-height: 36px;
+  cursor: pointer;
+}
+
+.donut-switch button.on { color: var(--tab-active-ink); background: var(--tab-active-bg); border-color: var(--tab-active-bg); }
+.donut-switch button:focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
+
+.swap { animation: fade 120ms var(--ease-out) both; }
+
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+
 .legend { display: flex; gap: 14px; font-size: 11px; color: var(--label); margin-bottom: var(--s2); }
 .sw { width: 9px; height: 9px; border-radius: 2.5px; display: inline-block; margin-right: 6px; vertical-align: -1px; }
 .sw.good { background: var(--good); }
@@ -379,13 +505,15 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 .line-good, .line-bad { stroke-width: 2.2; fill: none; stroke-linejoin: round; stroke-linecap: round; }
 .line-good { stroke: var(--good); }
 .line-bad { stroke: var(--bad); }
-.area-good, .area-bad { opacity: 0.08; }
+.area-good, .area-bad { opacity: 0.26; }
 .area-good { fill: var(--good); }
 .area-bad { fill: var(--bad); }
 .dot-good, .dot-bad { stroke: var(--surface); stroke-width: 2; }
 .dot-good { fill: var(--good); }
+.dot-rule { stroke: var(--border); stroke-dasharray: 2 4; }
 .dot-thin { fill: var(--surface); stroke: var(--label); stroke-width: 1.5; }
 .dot-bad { fill: var(--bad); }
+.flag-leader { stroke: var(--bad); stroke-width: 1; opacity: 0.5; }
 .flag-text { font-size: 10.5px; fill: var(--bad); font-weight: 700; }
 .caption-text { font-size: 10.5px; fill: var(--muted); }
 
@@ -457,6 +585,12 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 @keyframes rise {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: none; }
+}
+
+/* Above this the controls shrink to share one row; below it they need a real basis again, so the
+   bar breaks into two tidy rows instead of eight slivers. */
+@media (max-width: 1280px) {
+  .filter { flex: 1 1 200px; }
 }
 
 @media (max-width: 1400px) {

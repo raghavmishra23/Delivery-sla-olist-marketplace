@@ -10,6 +10,8 @@
     if (localStorage.getItem("theme") === "light") document.documentElement.dataset.theme = "light";
   } catch (e) { /* private window or blocked storage: keep the default */ }
 </script>
+<!-- empty data URI: stops the browser probing for favicon.ico, which is the only request the page did not make itself -->
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -49,10 +51,11 @@
     <div class="filter"><label for="f-from">Month from</label><select id="f-from"></select></div>
     <div class="filter"><label for="f-to">Month to</label><select id="f-to"></select></div>
     <div class="filter"><span class="flabel" id="lab-region">Region</span><div class="ms" id="ms-region"></div></div>
-    <div class="filter"><span class="flabel" id="lab-cstate">Customer state</span><div class="ms" id="ms-cstate"></div></div>
-    <div class="filter"><span class="flabel" id="lab-category">Product category</span><div class="ms" id="ms-category"></div></div>
-    <div class="filter"><span class="flabel" id="lab-payment">Payment type</span><div class="ms" id="ms-payment"></div></div>
-    <div class="filter"><span class="flabel" id="lab-status">Order status</span><div class="ms" id="ms-status"></div></div>
+    <div class="filter"><span class="flabel" id="lab-cstate">State</span><div class="ms" id="ms-cstate"></div></div>
+    <div class="filter"><span class="flabel" id="lab-category">Category</span><div class="ms" id="ms-category"></div></div>
+    <div class="filter"><span class="flabel" id="lab-payment">Payment</span><div class="ms" id="ms-payment"></div></div>
+    <div class="filter"><span class="flabel" id="lab-status">Status</span><div class="ms" id="ms-status"></div></div>
+    <div class="filter"><span class="flabel" id="lab-abucket">Approval</span><div class="ms" id="ms-abucket"></div></div>
     <button id="reset" type="button">Reset filters</button>
   </div>
 </header>
@@ -65,30 +68,50 @@
   <div class="t" id="k-onestar"><div class="skel skel-kpi"></div></div>
 
   <div class="t span2">
-    <div class="h">On-time rate by month</div>
-    <div class="hs" id="s-trend">&nbsp;</div>
+    <div class="card-head">
+      <div>
+        <div class="h">On-time rate by month</div>
+        <div class="hs" id="s-trend">&nbsp;</div>
+      </div>
+    </div>
     <div class="plot" id="c-trend"><div class="skel ar-wide"></div></div>
   </div>
   <div class="t">
-    <div class="h">Weakest states</div>
-    <div class="hs" id="s-worst">&nbsp;</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Weakest states</div>
+        <div class="hs" id="s-worst">&nbsp;</div>
+      </div>
+    </div>
     <div class="plot" id="c-worst"><div class="skel ar-tall"></div></div>
   </div>
   <div class="t">
-    <div class="h">Strongest states</div>
-    <div class="hs" id="s-best">&nbsp;</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Strongest states</div>
+        <div class="hs" id="s-best">&nbsp;</div>
+      </div>
+    </div>
     <div class="plot" id="c-best"><div class="skel ar-tall"></div></div>
   </div>
 
   <div class="t span2">
-    <div class="h">Review score by delivery outcome</div>
-    <div class="hs">Share of reviews at each score</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Review score by delivery outcome</div>
+        <div class="hs">Share of reviews at each score</div>
+      </div>
+    </div>
     <div class="legend"><span><i class="sw good"></i>On time</span><span><i class="sw bad"></i>Late</span></div>
     <div class="plot" id="c-review"><div class="skel ar-wide"></div></div>
   </div>
   <div class="t span2">
-    <div class="h">Seller late rate</div>
-    <div class="hs" id="s-sellers">&nbsp;</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Seller late rate</div>
+        <div class="hs" id="s-sellers">&nbsp;</div>
+      </div>
+    </div>
     <div class="plot" id="c-sellers"><div class="skel ar-wide"></div></div>
   </div>
 </section>
@@ -99,25 +122,61 @@
   <div class="t" id="k-median"><div class="skel skel-kpi"></div></div>
 
   <div class="t span2">
-    <div class="h">Worst sellers by late rate</div>
-    <div class="hs" id="s-worstsell">&nbsp;</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Worst sellers by late rate</div>
+        <div class="hs" id="s-worstsell">&nbsp;</div>
+      </div>
+    </div>
     <div class="plot" id="c-worstsell"><div class="skel ar-wide"></div></div>
   </div>
   <div class="t span2">
-    <div class="h">Best sellers by late rate</div>
-    <div class="hs" id="s-bestsell">&nbsp;</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Best sellers by late rate</div>
+        <div class="hs" id="s-bestsell">&nbsp;</div>
+      </div>
+    </div>
     <div class="plot" id="c-bestsell"><div class="skel ar-wide"></div></div>
   </div>
 
   <div class="t span2">
-    <div class="h">Late rate by seller state</div>
-    <div class="hs">Where the seller ships from</div>
-    <div class="plot" id="c-sellerstate"><div class="skel ar-wide"></div></div>
+    <div class="card-head">
+      <div>
+        <div class="h">Late rate by seller state</div>
+        <div class="hs">Where the seller ships from</div>
+      </div>
+    </div>
+    <div class="plot scroll" id="c-sellerstate"><div class="skel ar-wide"></div></div>
   </div>
   <div class="t span2">
-    <div class="h">Shipping within the state vs across states</div>
-    <div class="hs">Seller state compared with customer state on the same order</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Breach rate: within the state vs across states</div>
+        <div class="hs" id="s-crossstate">&nbsp;</div>
+      </div>
+    </div>
     <div class="plot" id="c-crossstate"><div class="skel ar-wide"></div></div>
+  </div>
+
+  <div class="t span2">
+    <div class="card-head">
+      <div>
+        <div class="h">SLA breach rate by approval lag</div>
+        <div class="hs" id="s-approval">&nbsp;</div>
+      </div>
+    </div>
+    <div class="plot" id="c-approval"><div class="skel ar-wide"></div></div>
+    <p class="note">Segmentation, not causation. An order placed late on a Friday is slow to approve <em>and</em> slow to reach a carrier, because both wait on the same working week. Full write-up in <code>reports/business_findings.md</code>.</p>
+  </div>
+  <div class="t span2">
+    <div class="card-head">
+      <div>
+        <div class="h">Approval lag within a fixed promise window</div>
+        <div class="hs" id="s-approvalband">&nbsp;</div>
+      </div>
+    </div>
+    <div class="plot" id="c-approvalband"><div class="skel ar-wide"></div></div>
   </div>
 </section>
 
@@ -127,35 +186,59 @@
   <div class="t" id="k-concentration"><div class="skel skel-kpi"></div></div>
 
   <div class="t span2">
-    <div class="h">On-time rate by customer state</div>
-    <div class="hs" id="s-allstates">&nbsp;</div>
+    <div class="card-head">
+      <div>
+        <div class="h">On-time rate by customer state</div>
+        <div class="hs" id="s-allstates">&nbsp;</div>
+      </div>
+    </div>
     <div class="plot scroll" id="c-allstates"><div class="skel ar-wide"></div></div>
   </div>
   <div class="t">
-    <div class="h">Slowest states</div>
-    <div class="hs">Average days from purchase to delivery</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Slowest states</div>
+        <div class="hs">Average days from purchase to delivery</div>
+      </div>
+    </div>
     <div class="plot" id="c-slowest"><div class="skel ar-tall"></div></div>
   </div>
   <div class="t">
-    <div class="h">Fastest states</div>
-    <div class="hs">Average days from purchase to delivery</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Fastest states</div>
+        <div class="hs">Average days from purchase to delivery</div>
+      </div>
+    </div>
     <div class="plot" id="c-fastest"><div class="skel ar-tall"></div></div>
   </div>
 
   <div class="t span2">
-    <div class="h">On-time rate by region</div>
-    <div class="hs" id="s-region">&nbsp;</div>
+    <div class="card-head">
+      <div>
+        <div class="h">On-time rate by region</div>
+        <div class="hs" id="s-region">&nbsp;</div>
+      </div>
+    </div>
     <div class="plot" id="c-region"><div class="skel ar-region"></div></div>
   </div>
   <div class="t span2">
-    <div class="h">Where the late orders are</div>
-    <div class="hs">Count of late deliveries, not rate — volume follows population</div>
-    <div class="plot" id="c-latevol"><div class="skel ar-wide"></div></div>
+    <div class="card-head">
+      <div>
+        <div class="h">Where the late orders are</div>
+        <div class="hs">Count of late deliveries, not rate — volume follows population</div>
+      </div>
+    </div>
+    <div class="plot scroll" id="c-latevol"><div class="skel ar-wide"></div></div>
   </div>
 
   <div class="t span4">
-    <div class="h">Promise headroom by state</div>
-    <div class="hs">Average promised days minus average actual days</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Promise headroom by state</div>
+        <div class="hs">Average promised days minus average actual days</div>
+      </div>
+    </div>
     <div class="plot" id="c-headroom"><div class="skel ar-wide"></div></div>
   </div>
 </section>
@@ -166,24 +249,40 @@
   <div class="t" id="k-noreview"><div class="skel skel-kpi"></div></div>
 
   <div class="t span2">
-    <div class="h">Low review rate by month</div>
-    <div class="hs" id="s-lowtrend">Share of reviews scoring 1★ or 2★</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Low review rate by month</div>
+        <div class="hs" id="s-lowtrend">Share of reviews scoring 1★ or 2★</div>
+      </div>
+    </div>
     <div class="plot" id="c-lowtrend"><div class="skel ar-wide"></div></div>
   </div>
   <div class="t span2">
-    <div class="h">Low review rate by how late the order was</div>
-    <div class="hs">Lateness measured against the promised date</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Low review rate by how late the order was</div>
+        <div class="hs">Lateness measured against the promised date</div>
+      </div>
+    </div>
     <div class="plot" id="c-bydelay"><div class="skel ar-wide"></div></div>
   </div>
 
   <div class="t span2">
-    <div class="h">Review score mix</div>
-    <div class="hs">Every reviewed order in the current filter</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Review score mix</div>
+        <div class="hs">Every reviewed order in the current filter</div>
+      </div>
+    </div>
     <div class="plot" id="c-mix"><div class="skel ar-wide"></div></div>
   </div>
   <div class="t span2">
-    <div class="h">Low review rate by state</div>
-    <div class="hs" id="s-lowstate">&nbsp;</div>
+    <div class="card-head">
+      <div>
+        <div class="h">Low review rate by state</div>
+        <div class="hs" id="s-lowstate">&nbsp;</div>
+      </div>
+    </div>
     <div class="plot" id="c-lowstate"><div class="skel ar-wide"></div></div>
   </div>
 </section>

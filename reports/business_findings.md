@@ -130,7 +130,7 @@ that seller-level action cannot.
 
 ## 3. Does internal approval lag predict lateness?
 
-**Weakly, and far too weakly to be a lever.** The honest answer needs three parts.
+**Weakly, and far too weakly to be a lever.** The answer has three parts.
 
 ### 3a. The pooled cut is small and non-monotonic
 
