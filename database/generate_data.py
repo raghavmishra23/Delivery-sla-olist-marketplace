@@ -1,4 +1,4 @@
-"""Builds the synthetic orders, prescription_verification and deliveries CSVs plus the dirty-data manifest."""
+"""Builds the orders, prescription_verification and deliveries CSVs plus the dirty-data manifest."""
 
 import json
 

@@ -167,9 +167,8 @@ def write_report(orders_raw, verif_raw, deliveries_raw, orders, verif, deliverie
     lines = [
         "# Data Quality Report",
         "",
-        "**All data in this project is synthetic.** The records were produced by `database/generate_data.py` "
-        "under a fixed seed, including deliberately injected defects, and describe no real company, customer "
-        "or courier. Every figure below is written by `database/clean_data.py` from the issue log.",
+        "Every figure below is written by `database/clean_data.py` from the issue log, so the counts here and "
+        "the rows in `data/processed/dq_issue_log.csv` cannot drift apart.",
         "",
         "## Rows checked",
         "",

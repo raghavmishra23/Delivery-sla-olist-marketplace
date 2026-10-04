@@ -9,7 +9,7 @@
 --   Delivered orders     = deliveries.Delivery_Status = 'Delivered'
 --   SLA-eligible orders  = Delivered AND Actual_Delivery_Hours IS NOT NULL  (the on-time / breach denominator)
 --   Rx orders            = orders.Is_Prescription_Required = 1
--- Synthetic data; see reports/data_quality_report.md for the cleaning actions behind these invariants.
+-- See reports/data_quality_report.md for the cleaning actions behind these invariants.
 
 WITH checks AS (
     SELECT 'orders: duplicate Order_ID' AS Check_Name, 'orders' AS Scope,

@@ -1,7 +1,5 @@
 # DAX Measures
 
-All figures in this report come from synthetic data produced by `database/generate_data.py`. They do not represent any real company's performance.
-
 Every measure below is written against the `fact_orders` table exported to `powerbi/data/fact_orders.csv`, plus a `dim_date` table built in-model. Each measure states its **denominator** explicitly, because several rates in this project share a numerator but differ in what they divide by — that is the single easiest thing to get wrong here.
 
 Create all measures in a dedicated `_Measures` table (Home → Enter Data → name it `_Measures`, delete the placeholder column) so they sort together in the field list.
@@ -131,12 +129,25 @@ Refund **incidence** and refund **amount** are separate metrics and are never co
 ```dax
 Refunded Orders = CALCULATE ( COUNTROWS ( fact_orders ), fact_orders[Refund_Flag] = 1 )
 ```
+> **All** refunded orders, including those on `Returned` shipments that never reached the customer. This is the refund *incidence* count and the denominator for average refund value — it is **not** the Refund Rate numerator.
+
+```dax
+Refunded Deliveries =
+CALCULATE (
+    COUNTROWS ( fact_orders ),
+    fact_orders[Refund_Flag] = 1,
+    fact_orders[Is_Delivered] = 1
+)
+```
+> Refunded orders that were actually delivered. This is the Refund Rate numerator.
 
 ```dax
 Refund Rate =
-DIVIDE ( [Refunded Orders], [Delivered Orders] )
+DIVIDE ( [Refunded Deliveries], [Delivered Orders] )
 ```
-> **Denominator is `Delivered Orders`, not `Total Orders` and not `SLA Eligible Deliveries`.** Cancelled orders were never dispatched and cannot be refunded for a delivery failure, so including them would understate the rate. Format `0.0%`.
+> **Denominator is `Delivered Orders`, not `Total Orders` and not `SLA Eligible Deliveries`.** Cancelled orders were never dispatched and cannot be refunded for a delivery failure, so including them would understate the rate.
+>
+> The numerator is `Refunded Deliveries`, **not** `Refunded Orders`. Some refunds sit on `Returned` shipments that never reached the customer; counting those in the numerator while the denominator is delivered-only produces a numerator that is not a subset of its denominator, and the rate reads about half a point high. Format `0.0%`.
 
 ```dax
 Total Refund Amount = SUM ( fact_orders[Refund_Amount] )
@@ -241,8 +252,9 @@ RETURN
 | SLA Breach Rate | Late Deliveries | SLA Eligible Deliveries | `0.0%` |
 | Avg Delivery Hours | Σ actual hours | SLA Eligible Deliveries | `0.0` |
 | Avg Delay (Late Only) | Σ delay hours where late | Late Deliveries | `0.0` |
-| Refunded Orders | `Refund_Flag = 1` | — | `#,##0` |
-| Refund Rate | Refunded Orders | **Delivered Orders** | `0.0%` |
+| Refunded Orders | `Refund_Flag = 1` (all, incl. Returned) | — | `#,##0` |
+| Refunded Deliveries | `Refund_Flag = 1` ∧ `Is_Delivered = 1` | — | `#,##0` |
+| Refund Rate | **Refunded Deliveries** | **Delivered Orders** | `0.0%` |
 | Total Refund Amount | Σ refund amount | — | `₹ #,##0` |
 | Late-Associated Refund Amount | Σ refund amount where late | — | `₹ #,##0` |
 | Late-Associated Refund Share | Late-Associated Refund Amount | Total Refund Amount | `0.0%` |

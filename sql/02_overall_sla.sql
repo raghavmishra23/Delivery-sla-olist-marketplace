@@ -8,7 +8,6 @@
 --   Avg Delay     = mean of (actual - promised) over late SLA-eligible orders only, never over all orders
 -- The SLA clock starts at Order_Date. Prescription verification is a component inside that window and is
 -- never added on top. Three result sets: headline KPIs, order-status mix, monthly on-time trend.
--- Synthetic data.
 
 WITH base AS (
     SELECT o.Order_ID,

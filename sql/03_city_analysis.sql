@@ -10,7 +10,6 @@
 -- Customer_City = 'Unknown' is the DQ-04 fallback for 6 orders. It stays visible in the output but is
 -- excluded from the rank, the quartile and the volume median so it cannot distort a comparison.
 -- Second result set: the same cut by city tier and medicine category, where the promised window is constant.
--- Synthetic data.
 
 WITH base AS (
     SELECT o.Customer_City,

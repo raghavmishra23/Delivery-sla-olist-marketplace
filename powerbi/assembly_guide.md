@@ -4,8 +4,6 @@
 
 Budget **30–45 minutes**. You need Power BI Desktop (free, Windows). Nothing else is required — the CSVs are committed, so you do not need Python or the database to build the report.
 
-All data is synthetic. The finished report shows generated figures, not real company performance.
-
 ---
 
 ## Step 1 — Load the data

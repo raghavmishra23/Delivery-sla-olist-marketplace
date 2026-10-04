@@ -1,0 +1,5 @@
+City_Tier,Medicine_Category,Promised_Hours,Sla_Eligible,Late,Breach_Rate_Pct,Avg_Delivery_Hours
+Tier 1,Chronic,48,853,21,2.4600,21.1100
+Tier 1,OTC,24,1103,280,25.3900,20.2400
+Tier 2,Chronic,72,355,42,11.8300,44.9200
+Tier 2,OTC,48,424,116,27.3600,41.8000

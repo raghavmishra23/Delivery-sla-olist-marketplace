@@ -1,0 +1,4 @@
+Prescription_Status,Rx_Orders,Cancelled,Cancellation_Rate_Pct,No_Recorded_Minutes,Avg_Verification_Minutes
+Approved,1463,46,3.1400,7,62.9500
+Rejected,60,60,100.0000,1,112.8000
+Pending,41,41,100.0000,41,

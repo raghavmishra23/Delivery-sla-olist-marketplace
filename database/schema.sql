@@ -1,6 +1,6 @@
 -- Schema for pharmacy.db: the three cleaned source tables plus the denormalised fact_orders mart.
 -- Timestamps are stored as TEXT in '%Y-%m-%d %H:%M:%S' so SQLite's datetime() and strftime() work on them.
--- Synthetic data: every row originates from database/generate_data.py under a fixed seed.
+-- Every row originates from database/generate_data.py under a fixed seed.
 
 DROP TABLE IF EXISTS fact_orders;
 DROP TABLE IF EXISTS deliveries;

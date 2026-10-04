@@ -1,8 +1,6 @@
 # Dashboard Specification
 
 Report title: **E-Pharmacy Delivery Performance & Prescription Verification**
-Subtitle, shown on every page: *Synthetic data — portfolio analysis, not real company performance.*
-
 Two pages, 1280 × 720 (16:9), Segoe UI throughout. This document specifies what to build; `assembly_guide.md` is the click-path that builds it.
 
 ---
@@ -99,7 +97,7 @@ Five slicers in the header strip, all **Dropdown** style, 9 pt, borderless, back
 
 ### 12. Insight callout
 
-A text box, not a visual. Three short lines in 10 pt `#1A1C1A`, each stating a finding with its denominator, plus a final 9 pt `#6E726E` line reading: *Synthetic data. Verification time sits inside the delivery window, not on top of it. Cells below n = 30 are excluded from rankings.*
+A text box, not a visual. Three short lines in 10 pt `#1A1C1A`, each stating a finding with its denominator, plus a final 9 pt `#6E726E` line reading: *Verification time sits inside the delivery window, not on top of it. Cells below n = 30 are excluded from rankings.*
 
 Populate the finding lines from `reports/business_findings.md` after assembly — do not invent numbers here.
 
@@ -154,7 +152,7 @@ Partner colours: a single-hue ramp from `#D7DAD5` to `#22C55E`, not five unrelat
 
 Fixed text, 9 pt `#6E726E`:
 
-> Prescription verification happens **inside** the delivery window — the SLA clock starts at order placement, so verification minutes are already contained in delivery hours and must never be added on top. Breach-rate differences across verification buckets are **segmentation, not causation**: orders placed outside pharmacist working hours are both slower to verify and slower to dispatch, so a shared upstream cause is at least as plausible. Cells below n = 30 are excluded from ranking claims. All data is synthetic.
+> Prescription verification happens **inside** the delivery window — the SLA clock starts at order placement, so verification minutes are already contained in delivery hours and must never be added on top. Breach-rate differences across verification buckets are **segmentation, not causation**: orders placed outside pharmacist working hours are both slower to verify and slower to dispatch, so a shared upstream cause is at least as plausible. Cells below n = 30 are excluded from ranking claims.
 
 ---
 
@@ -176,4 +174,3 @@ Fixed text, 9 pt `#6E726E`:
 - [ ] `Unknown` city is absent from the city bar and the matrix, present in the refund amount chart.
 - [ ] Matrix cells under n = 30 are unshaded.
 - [ ] `Avg Delay (Late Only)` is not averaged across early deliveries (spot-check one partner against `q04_partner_analysis.csv`).
-- [ ] The synthetic-data disclaimer is visible on both pages.

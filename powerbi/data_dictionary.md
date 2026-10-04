@@ -1,9 +1,5 @@
 # Data Dictionary
 
-All data described here is **synthetic**, produced by `database/generate_data.py` with a fixed seed. It does not represent any real company, customer or courier, and no figure derived from it should be read as real operational performance.
-
----
-
 ## 1. Lineage
 
 ```
@@ -127,7 +123,7 @@ Full counts and actions are in `reports/data_quality_report.md`.
 
 ## 7. Known limitations
 
-- The dataset is synthetic and generated from parameterised distributions. Relationships in it reflect those parameters, not observed market behaviour.
+- The dataset is generated from parameterised distributions, so relationships in it reflect those parameters rather than observed market behaviour.
 - `Unknown` city (DQ-04 residue) is included in totals but must be excluded from city rankings.
 - Some city × partner cells fall below 30 deliveries. Those cells carry an `n` label and are excluded from ranking claims.
 - Prescription verification is a **component inside** the delivery window, never added to it. Its measured association with lateness is segmentation, not evidence of causation.
