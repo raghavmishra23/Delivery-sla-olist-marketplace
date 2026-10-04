@@ -101,11 +101,20 @@ timestamp comparison would wrongly mark same-day deliveries as late. The page ne
   volume matters it gets its own tile ("Where the late orders are").
 - Red means late, breach or a low review score. Green means on time. Nothing else is colour-coded.
 - Every rate shows its sample size. Thresholds are stated on each tile and applied consistently:
-  30 eligible orders for a state or region to be ranked, 200 for a seller. Rows below their
-  threshold are dimmed, labelled `n=… low`, and excluded from best/worst claims — the hero tiles
-  that quote a best and a worst only read from the qualifying set. Where a filter leaves too few
-  sellers above the 200-order bar, the tile falls back to sellers above 30 and says on its face that
-  those rows sit below the ranking bar.
+  there are two separate floors. The **display floor is 30**: below it a row or point is drawn but
+  dimmed and labelled `n=… low`, because suppressing data is worse than qualifying it. The
+  **ranking floor is 300** for states and regions, and 200 for sellers: below it a cell is listed
+  but never ordered, ranked or quoted. Every tile that makes a best/worst claim — the strongest and
+  weakest tiles, the slowest and fastest tiles, the hero sentences, the spread callouts — reads only
+  from the qualifying set. If a filter leaves nothing above the ranking floor, the tile says so
+  rather than quietly falling back to thin cells.
+
+  300 is a judgement call, not a derived constant: roughly 0.3% of the eligible population, about a
+  ±4pp interval at these rates, and the point where a top-five ordering stops being dominated by
+  sampling noise. At the old 30-order floor the strongest-states tile was topped by Amapá (n=67) and
+  Acre (n=80) while São Paulo (n=40,494) did not appear — the rank is far less stable than the rate.
+  Six states fall below 300 and are listed but not ranked; the weak states that carry the Nordeste
+  finding all survive it (Alagoas 397, Sergipe 335, Piauí 476).
 - **The monthly trend never deletes a point for being small.** Only leading and trailing months
   holding almost nothing are trimmed, since those are artefacts of where the window was cut. Months
   below 30 orders are drawn as hollow markers with their n in the tooltip. Deleting them would be
@@ -115,9 +124,10 @@ timestamp comparison would wrongly mark same-day deliveries as late. The page ne
 
 ## Limitations
 
-- All 27 states clear the 30-order ranking bar on the unfiltered data, so nothing is currently
-  excluded from the state ranking; the marking still applies once a narrow filter thins the cells.
-  The strongest end of the state ranking is dominated by small states, so read it with the n column.
+- 21 of the 27 states clear the 300-order ranking floor. The other six (Acre, Amazonas, Amapá,
+  Rondônia, Roraima, Tocantins) are drawn in the full state list with their n, and are excluded from
+  every ranking and every quoted comparison.
+  Six states sit below the 300-order ranking floor and appear in the full list only.
 - Figures derived from other figures on the same tile — headroom, the 1 star ratio, the
   best-to-worst spread — carry a tooltip with the unrounded arithmetic, because subtracting or
   dividing the rounded numbers shown above them gives a slightly different answer.

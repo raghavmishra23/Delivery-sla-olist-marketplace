@@ -1,6 +1,11 @@
 // Project-wide small-sample floor. Below it a cell is marked and kept out of ranking claims, never
 // deleted: an absolute floor tuned to the national view would erase whole states once filtered.
 const MIN_SAMPLE = 30;
+// Claim floor, kept separate from the display floor above: a cell between the two is drawn and
+// labelled but never ordered or quoted. 300 is a judgement call — roughly 0.3% of the eligible
+// population and about a ±4pp interval at these rates, which is where a top-five stops being
+// sampling noise. It keeps the weak states that carry the finding (AL 397, SE 335, PI 476).
+const MIN_RANK = 300;
 const MIN_SELLER_N = 200;
 // a first or last month holding almost nothing is an artefact of where the window was cut
 const MIN_EDGE = 5;
@@ -532,7 +537,7 @@ function tile(id, { lab, value, note, chip, chipCls = "", big = false, tone = ""
 
 /** Horizontal ranked rows: track, bar, label, value and sample size. Shared by every ranking tile. */
 function rankChart(host, rows, opts = {}) {
-  if (!rows.length) return empty(host);
+  if (!rows.length) return empty(host, opts.emptyMsg);
   const w = opts.w || 700;
   // stacked puts the name on its own line above the bar, for labels too long to sit beside one
   const stacked = !!opts.stacked;
@@ -662,7 +667,10 @@ function groupBars(host, groups, series, opts = {}) {
   return svg;
 }
 
-function stateRows(idx, { metric, sort, limit, thinBelow = MIN_SAMPLE, col = D.cstate, key = "cstate", cls }) {
+/** Two separate floors. MIN_SAMPLE decides what gets drawn and marked; MIN_RANK decides what may
+ *  be ordered or quoted. A `limit` means the caller is making a best/worst claim, so it only ever
+ *  sees rankable rows — never a quiet fallback to thin cells. */
+function stateRows(idx, { metric, sort, limit, rankFloor = MIN_RANK, col = D.cstate, key = "cstate", cls }) {
   const rows = [];
   // show the full state name; the UF code stays as a secondary label since it is the data key
   const names = LEV[key + "Name"] || LEV[key];
@@ -672,13 +680,11 @@ function stateRows(idx, { metric, sort, limit, thinBelow = MIN_SAMPLE, col = D.c
     rows.push({
       label: names[code - 1],
       sub: names === LEV[key] ? null : LEV[key][code - 1],
-      value: m.value, n: m.n, thin: m.n < thinBelow,
+      value: m.value, n: m.n, thin: m.n < MIN_SAMPLE, rankable: m.n >= rankFloor,
     });
   });
   rows.sort(sort);
-  const ranked = rows.filter(r => !r.thin);
-  const pool = limit ? (ranked.length >= limit ? ranked : rows) : rows;
-  const out = limit ? pool.slice(0, limit) : pool;
+  const out = limit ? rows.filter(r => r.rankable).slice(0, limit) : rows;
   return out.map(r => ({ ...r, cls: typeof cls === "function" ? cls(r) : cls }));
 }
 
@@ -738,10 +744,12 @@ function renderOverview(idx) {
 
   const worst = stateRows(idx, { metric: otdMetric, sort: (a, b) => a.value - b.value, limit: 5, cls: "bar-bad" });
   const best = stateRows(idx, { metric: otdMetric, sort: (a, b) => b.value - a.value, limit: 5, cls: "bar-good" });
-  const sub = `${MIN_SAMPLE}+ eligible orders to rank · n shown`;
+  const sub = `${MIN_RANK}+ eligible orders to rank · every state is listed on the Geography tab`;
   document.getElementById("s-worst").textContent = sub;
   document.getElementById("s-best").textContent = sub;
-  const stateOpts = { w: 330, fmt: v => v.toFixed(1) + "%", lo: 78, hi: 100, stacked: true, valueW: 54 };
+  const noRank = `No state in this selection has ${MIN_RANK}+ eligible orders to rank.`;
+  const stateOpts = { w: 330, fmt: v => v.toFixed(1) + "%", lo: 78, hi: 100, stacked: true, valueW: 54,
+    emptyMsg: noRank };
   rankChart(document.getElementById("c-worst"), worst, stateOpts);
   rankChart(document.getElementById("c-best"), best, stateOpts);
 
@@ -761,8 +769,8 @@ function renderOverview(idx) {
       : `No seller reaches ${MIN_SAMPLE} eligible orders in this selection`;
   rankChart(document.getElementById("c-sellers"), ends.map(r => ({ ...r, cls: r.value > 10 ? "bar-bad" : "bar-good" })), {
     fmt: v => v.toFixed(2) + "%", labelW: 76, rowH: 26, gap: 12,
-    caption: ends.length >= 6 && ends[0].value > 0
-      ? `${(ends[ends.length - 1].value / ends[0].value).toFixed(0)}× spread between the best and worst seller at comparable volume.`
+    caption: ranked.length >= 6 && ends.length >= 6 && ends[0].value > 0
+      ? `${(ends[ends.length - 1].value / ends[0].value).toFixed(1)}× spread between the best and worst seller at comparable volume.`
       : null,
   });
 }
@@ -895,7 +903,7 @@ function renderCrossState(idx) {
 
 function renderGeo(idx) {
   const all = stateRows(idx, { metric: otdMetric, sort: (a, b) => b.value - a.value });
-  const ranked = all.filter(r => !r.thin);
+  const ranked = all.filter(r => r.rankable);
   const top = ranked[0], bottom = ranked[ranked.length - 1];
   const biggest = [...all].sort((a, b) => b.n - a.n)[0];
   const totalN = all.reduce((acc, r) => acc + r.n, 0);
@@ -907,12 +915,12 @@ function renderGeo(idx) {
       ? `${top.value.toFixed(2)}% − ${bottom.value.toFixed(2)}% = ${(top.value - bottom.value).toFixed(2)} pp`
       : null,
     note: top && bottom
-      ? `${top.label} at ${top.value.toFixed(1)}% against ${bottom.label} at ${bottom.value.toFixed(1)}% · ${MIN_SAMPLE}+ orders each`
-      : "Not enough states clear the sample threshold",
+      ? `${top.label} at ${top.value.toFixed(1)}% against ${bottom.label} at ${bottom.value.toFixed(1)}% · ${MIN_RANK}+ orders each`
+      : `No state in this selection has ${MIN_RANK}+ eligible orders to rank`,
   });
   tile("k-states", {
     lab: "States in range", value: intText(all.length),
-    note: `${intText(ranked.length)} clear the ${MIN_SAMPLE}-order bar for ranking`,
+    note: `${intText(ranked.length)} clear the ${MIN_RANK}-order bar for ranking · the rest are listed, not ranked`,
   });
   tile("k-concentration", {
     lab: "Largest state share", value: biggest ? pctText(pct(biggest.n, totalN)) : "—",
@@ -920,7 +928,11 @@ function renderGeo(idx) {
   });
 
   document.getElementById("s-allstates").textContent =
-    `All ${intText(all.length)} states, best first · rows under ${MIN_SAMPLE} orders are marked and excluded from ranking claims`;
+    `${all.length === 1 ? "1 state" : `All ${intText(all.length)} states`}, best first · `
+    + (all.length === ranked.length
+      ? `every one clears the ${MIN_RANK}-order bar for ranking`
+      : `${intText(all.length - ranked.length)} under ${MIN_RANK} eligible orders `
+        + `${all.length - ranked.length === 1 ? "is" : "are"} listed but never ranked or quoted`);
   rankChart(document.getElementById("c-allstates"), all.map(r => ({
     ...r, cls: r.value >= 93 ? "bar-good" : r.value >= 88 ? "bar-mute" : "bar-bad",
   })), { fmt: v => v.toFixed(1) + "%", lo: 70, hi: 100, labelW: 132, rowH: 20, gap: 8 });
@@ -931,7 +943,8 @@ function renderGeo(idx) {
   };
   const slow = stateRows(idx, { metric: days, sort: (a, b) => b.value - a.value, limit: 5, cls: "bar-bad" });
   const fast = stateRows(idx, { metric: days, sort: (a, b) => a.value - b.value, limit: 5, cls: "bar-good" });
-  const dayOpts = { w: 330, fmt: v => (v == null ? "—" : v.toFixed(1) + " d"), stacked: true, valueW: 58 };
+  const dayOpts = { w: 330, fmt: v => (v == null ? "—" : v.toFixed(1) + " d"), stacked: true, valueW: 58,
+    emptyMsg: `No state in this selection has ${MIN_RANK}+ eligible orders to rank.` };
   rankChart(document.getElementById("c-slowest"), slow, dayOpts);
   rankChart(document.getElementById("c-fastest"), fast, dayOpts);
 
@@ -940,14 +953,14 @@ function renderGeo(idx) {
     cls: r => (r.value >= 93 ? "bar-good" : r.value >= 90 ? "bar-mute" : "bar-bad"),
   });
   document.getElementById("s-region").textContent = regions.length
-    ? `${regions.length} regions · the same ${MIN_SAMPLE}-order bar applies, and every region clears it`
+    ? `${regions.length} regions · all clear the ${MIN_RANK}-order bar for ranking`
     : "";
   rankChart(document.getElementById("c-region"), regions,
     { fmt: v => v.toFixed(1) + "%", lo: 80, hi: 100, labelW: 132, rowH: 26, gap: 12 });
 
   const vol = stateRows(idx, {
     metric: g => { const s = otdStats(g); return { value: s.n ? s.late : null, n: s.n }; },
-    sort: (a, b) => b.value - a.value, limit: 10, thinBelow: 0, cls: "bar-bad",
+    sort: (a, b) => b.value - a.value, limit: 10, rankFloor: 0, cls: "bar-bad",
   });
   rankChart(document.getElementById("c-latevol"), vol, { fmt: intText, labelW: 132, rowH: 22, gap: 9 });
 
@@ -1021,11 +1034,14 @@ function renderReviews(idx) {
     });
 
   document.getElementById("s-lowstate").textContent =
-    `Worst 10 states by share of 1★ and 2★ reviews · ${MIN_SAMPLE}+ orders to rank`;
+    `Worst 10 states by share of 1★ and 2★ reviews · ${MIN_RANK}+ reviews to rank`;
   rankChart(document.getElementById("c-lowstate"), stateRows(idx, {
     metric: g => { const r = reviewStats(g); return { value: r.lowRate == null ? null : r.lowRate * 100, n: r.scored }; },
     sort: (a, b) => b.value - a.value, limit: 10, cls: "bar-bad",
-  }), { fmt: v => v.toFixed(1) + "%", labelW: 132, rowH: 22, gap: 9 });
+  }), {
+    fmt: v => v.toFixed(1) + "%", labelW: 132, rowH: 22, gap: 9,
+    emptyMsg: `No state in this selection has ${MIN_RANK}+ reviews to rank.`,
+  });
 }
 
 const PAGES = {
