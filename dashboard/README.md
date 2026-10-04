@@ -3,14 +3,13 @@
 A self-contained HTML dashboard over the cleaned order fact table. Two pages — an executive summary
 and a logistics / prescription view — with filters that recompute every figure in the browser.
 
-**All data in this project is synthetic.** The orders, partners and verification times were produced
-by `database/generate_data.py` for portfolio purposes. Nothing here describes a real company's
-delivery performance.
-
 ## Opening it
 
 Double-click `index.html`. No server, no install, no network access — the page loads a local
 stylesheet, a local data file and a local script, and draws its charts as inline SVG.
+
+Dark theme is the default; the header toggle switches to light and remembers the choice in
+`localStorage`. Blocked or unavailable storage falls back to dark without erroring.
 
 ## Rebuilding the data file
 
@@ -25,6 +24,8 @@ columnar layout (`.js` rather than `.json` because `fetch()` on a local file is 
 query outputs. Pass a CSV path as the first argument, or set `FACT_ORDERS_CSV`, to build from a
 different source.
 
+Current build: 2,995 rows from `fact_orders.csv`, packed 2026-10-04, 183 KB.
+
 ## Metric definitions
 
 These match the SQL, Excel and DAX definitions used elsewhere in the project.
@@ -36,13 +37,17 @@ These match the SQL, Excel and DAX definitions used elsewhere in the project.
 | SLA Breach Rate | 1 − on-time rate, same denominator |
 | Avg Delivery Hours | mean `Actual_Delivery_Hours` over `Is_Sla_Eligible = 1` |
 | Avg Delay (late only) | mean `Delay_Hours` over late orders only |
-| Refund Rate | refunded orders ÷ delivered orders (`Is_Delivered = 1`) |
-| Total Refund Value | sum of `Refund_Amount`; reported separately from refund incidence |
+| Refund Rate | refunded **delivered** orders ÷ delivered orders (`Is_Delivered = 1`) |
+| Total Refund Value | sum of `Refund_Amount` across all refunds; reported separately from refund incidence |
 | Rx Cancellation Rate | cancelled Rx-required orders ÷ all Rx-required orders in the segment |
 | Verification buckets | 0-30 / 31-60 / 61-120 / >120 minutes, plus `Unknown` where the time was dropped in cleaning |
 
 The SLA clock starts when the order is placed. Prescription verification happens *inside* that
 window, so verification minutes are never added on top of delivery hours.
+
+Refund rate and average refund value use deliberately different denominators: a `Returned` shipment
+can carry a refund without ever being delivered, so those refunds stay out of the rate (keeping the
+numerator a subset of its denominator) but remain in the total refunded amount.
 
 ## Limitations
 

@@ -1,17 +1,38 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>E-Pharmacy Delivery SLA Dashboard</title>
+<script>
+  // Runs before first paint so a stored light theme never flashes dark first.
+  try {
+    if (localStorage.getItem("theme") === "light") document.documentElement.dataset.theme = "light";
+  } catch (e) { /* private window or blocked storage: keep the default */ }
+</script>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
 <header class="topbar">
   <div class="masthead">
-    <h1>E-Pharmacy Delivery Performance &amp; Prescription Verification</h1>
-    <span class="disclaimer">Synthetic data — generated for portfolio analysis, not real company performance.</span>
+    <h1>E-Pharmacy Delivery Performance <span>&amp; Prescription Verification</span></h1>
+    <button class="toggle" id="theme-toggle" type="button" aria-pressed="true">
+      <span class="toggle-label">Theme</span>
+      <span class="toggle-track">
+        <span class="toggle-thumb">
+          <svg class="icon moon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M13.2 10.4A5.6 5.6 0 0 1 6.1 3a.6.6 0 0 0-.86-.67 6.8 6.8 0 1 0 8.9 8.9.6.6 0 0 0-.67-.86Z"/>
+          </svg>
+          <svg class="icon sun" viewBox="0 0 16 16" aria-hidden="true">
+            <circle cx="8" cy="8" r="3.1"/>
+            <g stroke-width="1.5" stroke-linecap="round">
+              <path d="M8 1v1.8M8 13.2V15M15 8h-1.8M2.8 8H1M12.95 3.05l-1.27 1.27M4.32 11.68l-1.27 1.27M12.95 12.95l-1.27-1.27M4.32 4.32 3.05 3.05"/>
+            </g>
+          </svg>
+        </span>
+      </span>
+    </button>
   </div>
 
   <div class="filters">
@@ -45,24 +66,32 @@
   <nav class="tabs" role="tablist">
     <button class="tab" id="tab-exec" role="tab" aria-selected="true" aria-controls="page-exec">Executive summary</button>
     <button class="tab" id="tab-ops" role="tab" aria-selected="false" aria-controls="page-ops">Logistics &amp; prescription</button>
+    <span class="tab-ink" aria-hidden="true"></span>
   </nav>
 </header>
 
-<main>
+<main id="board">
 
 <section class="page" id="page-exec" role="tabpanel" aria-labelledby="tab-exec">
-  <div class="row" id="kpis"></div>
+  <div class="row" id="kpis">
+    <div class="card kpi"><div class="skel skel-kpi"></div></div>
+    <div class="card kpi"><div class="skel skel-kpi"></div></div>
+    <div class="card kpi"><div class="skel skel-kpi"></div></div>
+    <div class="card kpi"><div class="skel skel-kpi"></div></div>
+    <div class="card kpi"><div class="skel skel-kpi"></div></div>
+    <div class="card kpi"><div class="skel skel-kpi"></div></div>
+  </div>
 
   <div class="row">
     <div class="card w4">
       <h2>On-time vs late</h2>
       <p class="sub">Delivered orders with a recorded delivery time</p>
-      <div id="c-split"></div>
+      <div class="plot" id="c-split"><div class="skel ar-donut"></div></div>
     </div>
     <div class="card w8">
       <h2>On-time rate by city</h2>
-      <p class="sub" id="city-sub"></p>
-      <div id="c-city"></div>
+      <p class="sub" id="city-sub">&nbsp;</p>
+      <div class="plot" id="c-city"><div class="skel ar-city"></div></div>
     </div>
   </div>
 
@@ -70,7 +99,7 @@
     <div class="card w12">
       <h2>Monthly on-time rate and order volume</h2>
       <p class="sub">Line: on-time rate (left). Bars: orders placed (right).</p>
-      <div id="c-trend"></div>
+      <div class="plot" id="c-trend"><div class="skel ar-trend"></div></div>
     </div>
   </div>
 </section>
@@ -80,12 +109,12 @@
     <div class="card w5">
       <h2>Late share by delivery partner</h2>
       <p class="sub">Bar length is the breach rate; n is the partner's SLA-eligible deliveries.</p>
-      <div id="c-partner"></div>
+      <div class="plot" id="c-partner"><div class="skel ar-partner"></div></div>
     </div>
     <div class="card w7">
       <h2>On-time rate by city and partner</h2>
-      <p class="sub" id="matrix-sub"></p>
-      <div id="c-matrix"></div>
+      <p class="sub" id="matrix-sub">&nbsp;</p>
+      <div class="plot" id="c-matrix"><div class="skel ar-matrix"></div></div>
       <p class="note" id="matrix-note"></p>
     </div>
   </div>
@@ -94,13 +123,13 @@
     <div class="card w6">
       <h2>SLA breach rate by verification time</h2>
       <p class="sub">Prescription orders only, grouped by minutes to verify</p>
-      <div id="c-bucket"></div>
+      <div class="plot" id="c-bucket"><div class="skel ar-plot"></div></div>
       <p class="note">Verification happens <strong>inside</strong> the delivery window — the clock starts when the order is placed, so verification minutes are never added on top of delivery hours. These buckets are segmentation, not causation: slow verification and slow delivery can share an upstream cause.</p>
     </div>
     <div class="card w6">
       <h2>Chronic vs OTC</h2>
       <p class="sub">Same denominators as the KPI cards, split by medicine category</p>
-      <div id="c-cat"></div>
+      <div class="plot" id="c-cat"><div class="skel ar-plot"></div></div>
     </div>
   </div>
 
@@ -108,21 +137,21 @@
     <div class="card w6">
       <h2>Refund value by city</h2>
       <p class="sub">Total refunded amount; refund incidence is reported separately in the KPI row.</p>
-      <div id="c-refund-city"></div>
+      <div class="plot" id="c-refund-city"><div class="skel ar-refund"></div></div>
     </div>
     <div class="card w6">
       <h2>Refund value by partner</h2>
       <p class="sub">Total refunded amount on delivered orders</p>
-      <div id="c-refund-partner"></div>
+      <div class="plot" id="c-refund-partner"><div class="skel ar-partner"></div></div>
     </div>
   </div>
 </section>
 
 </main>
 
-<footer id="provenance"></footer>
+<div class="tip" id="tip" role="tooltip" hidden></div>
 
-<script src="data/dashboard_data.js"></script>
-<script src="app.js"></script>
+<script defer src="data/dashboard_data.js"></script>
+<script defer src="app.js"></script>
 </body>
 </html>

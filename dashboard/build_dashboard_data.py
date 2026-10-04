@@ -94,7 +94,8 @@ def kpis(orders):
         "on_time_rate": round(float((sla & (num["Is_On_Time"] == 1)).sum()) / n_sla, 4) if n_sla else None,
         "avg_delivery_hours": round(float(num.loc[sla, "Actual_Delivery_Hours"].mean()), 2) if n_sla else None,
         "avg_delay_late_only": round(float(num.loc[late, "Delay_Hours"].mean()), 2) if int(late.sum()) else None,
-        "refund_rate": round(float((num["Refund_Flag"] == 1).sum()) / n_del, 4) if n_del else None,
+        # Returned orders can carry a refund but were never delivered, so they stay out of the rate.
+        "refund_rate": round(float(((num["Refund_Flag"] == 1) & (num["Is_Delivered"] == 1)).sum()) / n_del, 4) if n_del else None,
         "refund_amount": round(float(num["Refund_Amount"].fillna(0).sum()), 2),
     }
 

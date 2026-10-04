@@ -2,12 +2,16 @@ const OTD_TARGET = 0.85;
 const MIN_N = 30;
 const BUCKET_ORDER = ["0-30", "31-60", "61-120", ">120", "Unknown"];
 const NS = "http://www.w3.org/2000/svg";
+const THEME_KEY = "theme";
 
-const css = getComputedStyle(document.documentElement);
-const token = name => css.getPropertyValue("--" + name).trim();
+const board = document.getElementById("board");
+const tip = document.getElementById("tip");
+const token = name => getComputedStyle(document.documentElement).getPropertyValue("--" + name).trim();
 
-const rows = decode(window.FACT_ORDERS);
-const months = [...new Set(rows.map(r => r.month))].sort();
+let rows = [];
+let months = [];
+let firstPaint = true;
+let enterIndex = 0;
 
 function decode(payload) {
   const { dicts, cols } = payload;
@@ -51,7 +55,9 @@ const otdRate = list => { const e = slaRows(list); return rate(count(e, r => r.o
 const breachRate = list => { const r = otdRate(list); return r == null ? null : 1 - r; };
 const avgHours = list => mean(slaRows(list).map(r => r.actual));
 const avgDelayLate = list => mean(list.filter(r => r.sla && r.onTime === 0).map(r => r.delay));
-const refundRate = list => rate(count(list, r => r.refund), count(list, r => r.delivered));
+// Returned orders can carry a refund but were never delivered, so they stay out of the rate
+// (they remain in the refund total) and the numerator stays a subset of the denominator.
+const refundRate = list => rate(count(list, r => r.refund && r.delivered), count(list, r => r.delivered));
 const rxCancelRate = list => {
   const rx = list.filter(r => r.rx);
   return rate(count(rx, r => r.ostatus === "Cancelled"), rx.length);
@@ -81,8 +87,8 @@ function buildFilters() {
   options(selects.partner, [...new Set(rows.map(r => r.partner).filter(Boolean))].sort(), "All partners");
   options(selects.rx, [{ label: "Rx required", value: "1" }, { label: "Non-Rx", value: "0" }], "All orders");
   resetFilters();
-  Object.values(selects).forEach(s => s.addEventListener("change", () => { readFilters(); render(); }));
-  document.getElementById("reset").addEventListener("click", () => { resetFilters(); render(); });
+  Object.values(selects).forEach(s => s.addEventListener("change", () => { readFilters(); scheduleRender(); }));
+  document.getElementById("reset").addEventListener("click", () => { resetFilters(); scheduleRender(); });
 }
 
 function resetFilters() {
@@ -129,6 +135,10 @@ function el(tag, attrs = {}, text) {
 function canvas(host, w, h) {
   host.replaceChildren();
   const svg = el("svg", { viewBox: `0 0 ${w} ${h}`, class: "chart", role: "img" });
+  if (firstPaint) {
+    svg.classList.add("enter");
+    svg.style.animationDelay = enterIndex++ * 35 + "ms";
+  }
   host.append(svg);
   return svg;
 }
@@ -157,6 +167,10 @@ function yGrid(svg, box, max, fmt, steps = 4) {
   }
 }
 
+function bar(attrs, tipText) {
+  return el("rect", { ...attrs, class: "bar " + attrs.class, "data-tip": tipText, rx: 3 });
+}
+
 function hBars(host, items, opts) {
   if (!items.length) return empty(host);
   const w = 640, labelW = opts.labelW || 130, rowH = 34;
@@ -169,10 +183,11 @@ function hBars(host, items, opts) {
     const y = i * rowH + 6;
     svg.append(el("text", { class: "axis-text", x: 0, y: y + 13 }, d.label));
     if (d.note) svg.append(el("text", { class: "axis-text", x: 0, y: y + 26, "font-size": "10" }, d.note));
-    svg.append(el("rect", { class: "track", x: labelW, y: y + 8, width: barW, height: 14, rx: 2 }));
-    svg.append(el("rect", {
-      class: d.cls, x: labelW, y: y + 8, width: Math.max(1, (d.value / max) * barW), height: 14, rx: 2,
-    }));
+    svg.append(el("rect", { class: "track", x: labelW, y: y + 8, width: barW, height: 14, rx: 3 }));
+    svg.append(bar(
+      { class: d.cls, x: labelW, y: y + 8, width: Math.max(2, (d.value / max) * barW), height: 14 },
+      `${d.label}: ${opts.fmt(d.value)}${d.note ? " · " + d.note : ""}`
+    ));
     svg.append(el("text", { class: "value-text", x: labelW + barW + 8, y: y + 19 }, opts.fmt(d.value)));
   });
 
@@ -196,7 +211,10 @@ function vBars(host, items, opts) {
   items.forEach((d, i) => {
     const cx = box.x + slot * (i + 0.5);
     const barH = ((d.value || 0) / max) * box.h;
-    svg.append(el("rect", { class: d.cls, x: cx - barW / 2, y: box.y + box.h - barH, width: barW, height: Math.max(1, barH), rx: 2 }));
+    svg.append(bar(
+      { class: d.cls, x: cx - barW / 2, y: box.y + box.h - barH, width: barW, height: Math.max(2, barH) },
+      `${d.label}: ${opts.fmt(d.value)}${d.note ? " · " + d.note : ""}`
+    ));
     svg.append(el("text", { class: "value-text", x: cx, y: box.y + box.h - barH - 7, "text-anchor": "middle" }, opts.fmt(d.value)));
     svg.append(el("text", { class: "axis-text", x: cx, y: box.y + box.h + 18, "text-anchor": "middle" }, d.label));
     if (d.note) svg.append(el("text", { class: "axis-text", x: cx, y: box.y + box.h + 33, "text-anchor": "middle" }, d.note));
@@ -219,7 +237,10 @@ function groupedBars(host, groups, series, opts) {
     g.values.forEach((v, si) => {
       const x = centre + (si - (series.length - 1) / 2) * (barW + 6) - barW / 2;
       const barH = ((v || 0) / max) * box.h;
-      svg.append(el("rect", { class: series[si].cls, x, y: box.y + box.h - barH, width: barW, height: Math.max(1, barH), rx: 2 }));
+      svg.append(bar(
+        { class: series[si].cls, x, y: box.y + box.h - barH, width: barW, height: Math.max(2, barH) },
+        `${series[si].name} — ${g.label}: ${opts.fmt(v)}`
+      ));
       svg.append(el("text", { class: "value-text", x: x + barW / 2, y: box.y + box.h - barH - 7, "text-anchor": "middle" }, opts.fmt(v)));
     });
     svg.append(el("text", { class: "axis-text", x: centre, y: box.y + box.h + 20, "text-anchor": "middle" }, g.label));
@@ -232,13 +253,13 @@ function donut(host, onTime, late) {
   if (!total) return empty(host, "No delivered orders with timing data.");
   const w = 300, h = 230, r = 72, cx = w / 2, cy = h / 2 - 4, circ = 2 * Math.PI * r;
   const svg = canvas(host, w, h);
-  const ring = (cls, len, offset) => el("circle", {
+  const ring = (cls, len, offset, tipText) => el("circle", {
     class: cls, cx, cy, r, "stroke-dasharray": `${len} ${circ - len}`,
-    "stroke-dashoffset": offset, transform: `rotate(-90 ${cx} ${cy})`,
+    "stroke-dashoffset": offset, transform: `rotate(-90 ${cx} ${cy})`, "data-tip": tipText,
   });
   const onLen = (onTime / total) * circ;
-  svg.append(ring("arc-pos", onLen, 0));
-  svg.append(ring("arc-neg", circ - onLen, -onLen));
+  svg.append(ring("arc-pos", onLen, 0, `On time: ${intText(onTime)} (${pctText(onTime / total)})`));
+  svg.append(ring("arc-neg", circ - onLen, -onLen, `Late: ${intText(late)} (${pctText(late / total)})`));
   svg.append(el("text", { x: cx, y: cy + 2, "text-anchor": "middle", class: "donut-value" }, pctText(onTime / total)));
   svg.append(el("text", { x: cx, y: cy + 22, "text-anchor": "middle", class: "axis-text" }, "on time"));
   svg.append(el("text", { x: cx, y: h - 8, "text-anchor": "middle", class: "axis-text" },
@@ -259,7 +280,10 @@ function comboChart(host, points) {
   points.forEach((p, i) => {
     const cx = box.x + slot * (i + 0.5);
     const barH = (p.volume / volMax) * box.h;
-    svg.append(el("rect", { class: "bar-mute", x: cx - barW / 2, y: box.y + box.h - barH, width: barW, height: Math.max(1, barH), rx: 2 }));
+    svg.append(bar(
+      { class: "bar-mute", x: cx - barW / 2, y: box.y + box.h - barH, width: barW, height: Math.max(2, barH) },
+      `${p.label}: ${intText(p.volume)} orders · ${pctText(p.rate)} on time`
+    ));
     svg.append(el("text", { class: "axis-text", x: cx, y: box.y + box.h + 18, "text-anchor": "middle" }, p.label));
   });
 
@@ -273,7 +297,7 @@ function comboChart(host, points) {
     const y = p => box.y + box.h - p.rate * box.h;
     svg.append(el("path", { class: "trend-line", d: drawn.map((p, i) => `${i ? "L" : "M"}${p.x} ${y(p)}`).join(" ") }));
     drawn.forEach(p => {
-      svg.append(el("circle", { class: "trend-dot", cx: p.x, cy: y(p), r: 3.5 }));
+      svg.append(el("circle", { class: "trend-dot", cx: p.x, cy: y(p), r: 3.5, "data-tip": `${p.label}: ${pctText(p.rate)} on time` }));
       svg.append(el("text", { class: "value-text", x: p.x, y: y(p) - 11, "text-anchor": "middle" }, pctText(p.rate)));
     });
   }
@@ -287,9 +311,10 @@ function rgb(name) {
 
 const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
 
-/** Heat tint for a matrix cell: red-to-green by rank, then washed into the card background. */
-function heat(t, strength) {
-  return `rgb(${mix(rgb("card"), mix(rgb("red"), rgb("green"), t), strength).join(",")})`;
+/** Red-to-green tint by rank, washed into the card surface; rebuilt per render so it follows the theme. */
+function heatScale() {
+  const base = rgb("surface"), lo = rgb("negative"), hi = rgb("accent");
+  return (t, strength) => `rgb(${mix(base, mix(lo, hi, t), strength).join(",")})`;
 }
 
 function renderMatrix(host, view) {
@@ -309,6 +334,7 @@ function renderMatrix(host, view) {
   const rankable = [...cells.values()].filter(c => c.n >= MIN_N && c.rate != null).map(c => c.rate);
   const lo = rankable.length ? Math.min(...rankable) : 0;
   const hi = rankable.length ? Math.max(...rankable) : 1;
+  const tint = heatScale();
 
   const table = document.createElement("table");
   table.className = "matrix";
@@ -329,7 +355,8 @@ function renderMatrix(host, view) {
       const thin = c.n < MIN_N;
       if (thin) td.className = "cell-thin";
       const t = hi > lo ? Math.min(1, Math.max(0, (c.rate - lo) / (hi - lo))) : 1;
-      td.style.background = heat(t, thin ? 0.1 : 0.32);
+      td.style.background = tint(t, thin ? 0.12 : 0.34);
+      td.setAttribute("data-tip", `${city} · ${partner}: ${pctText(c.rate)} on time, n=${c.n}`);
       td.append(Object.assign(document.createElement("span"), { className: "cell-rate", textContent: pctText(c.rate) }));
       td.append(Object.assign(document.createElement("span"), {
         className: "cell-n", textContent: thin ? `n=${c.n} low` : `n=${c.n}`,
@@ -350,21 +377,25 @@ function renderKpis(view) {
   const host = document.getElementById("kpis");
   const delivered = count(view, r => r.delivered);
   const refunds = count(view, r => r.refund);
+  const refundedDeliveries = count(view, r => r.refund && r.delivered);
   const refundTotal = sum(view, r => r.refundAmt);
-  const otd = otdRate(view);
 
   const cards = [
     ["Total orders", intText(view.length), `${intText(count(view, r => r.ostatus === "Cancelled"))} cancelled, never dispatched`],
     ["Delivered orders", intText(delivered), `${intText(slaRows(view).length)} with usable delivery timing`],
-    ["On-time rate", pctText(otd), `breach ${pctText(breachRate(view))} · target ${pctText(OTD_TARGET)}`],
+    ["On-time rate", pctText(otdRate(view)), `breach ${pctText(breachRate(view))} · target ${pctText(OTD_TARGET)}`],
     ["Avg delivery hours", numText(avgHours(view)), `avg delay when late ${numText(avgDelayLate(view))} h`],
-    ["Refund rate", pctText(refundRate(view)), `${intText(refunds)} of ${intText(delivered)} delivered orders`],
+    ["Refund rate", pctText(refundRate(view)), `${intText(refundedDeliveries)} of ${intText(delivered)} delivered orders`],
     ["Total refund value", inrText(refundTotal), refunds ? `${inrText(refundTotal / refunds)} per refunded order` : "no refunds in range"],
   ];
 
-  host.replaceChildren(...cards.map(([label, value, note]) => {
+  host.replaceChildren(...cards.map(([label, value, note], i) => {
     const card = document.createElement("div");
     card.className = "card kpi";
+    if (firstPaint) {
+      card.classList.add("enter");
+      card.style.animationDelay = i * 35 + "ms";
+    }
     card.append(Object.assign(document.createElement("div"), { className: "label", textContent: label }));
     card.append(Object.assign(document.createElement("div"), { className: "value", textContent: value }));
     card.append(Object.assign(document.createElement("div"), { className: "delta", textContent: note }));
@@ -476,6 +507,7 @@ function legend(host, entries) {
 }
 
 function render() {
+  enterIndex = 0;
   const view = applyFilters();
   if (!view.length) {
     renderKpis(view);
@@ -489,6 +521,21 @@ function render() {
   renderOps(view);
 }
 
+/** Yield a frame so the busy wash can paint when the recompute is slow; fast ones resolve unseen. */
+function scheduleRender() {
+  board.classList.add("busy");
+  requestAnimationFrame(() => {
+    render();
+    board.classList.remove("busy");
+  });
+}
+
+function moveInk(tab) {
+  const ink = document.querySelector(".tab-ink");
+  ink.style.width = tab.offsetWidth + "px";
+  ink.style.transform = `translateX(${tab.offsetLeft}px)`;
+}
+
 function wireTabs() {
   const pairs = [["tab-exec", "page-exec"], ["tab-ops", "page-ops"]];
   pairs.forEach(([tabId, pageId]) => {
@@ -498,18 +545,64 @@ function wireTabs() {
         document.getElementById(t).setAttribute("aria-selected", String(active));
         document.getElementById(p).hidden = !active;
       });
+      moveInk(document.getElementById(tabId));
     });
+  });
+  moveInk(document.getElementById("tab-exec"));
+  window.addEventListener("resize", () => moveInk(document.querySelector('.tab[aria-selected="true"]')));
+}
+
+function setTheme(mode, repaint = true) {
+  document.documentElement.dataset.theme = mode;
+  const btn = document.getElementById("theme-toggle");
+  btn.setAttribute("aria-pressed", String(mode === "dark"));
+  btn.setAttribute("aria-label", mode === "dark" ? "Dark theme, switch to light" : "Light theme, switch to dark");
+  try {
+    localStorage.setItem(THEME_KEY, mode);
+  } catch (e) { /* blocked storage: the choice just lasts for this view */ }
+  // the matrix heat tint is mixed in JS, so it only follows the theme if the cells are redrawn
+  if (repaint) render();
+}
+
+function wireTheme() {
+  let stored = null;
+  try {
+    stored = localStorage.getItem(THEME_KEY);
+  } catch (e) { /* blocked storage: fall through to the dark default */ }
+  setTheme(stored === "light" ? "light" : "dark", false);
+  document.getElementById("theme-toggle").addEventListener("click", () => {
+    setTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
   });
 }
 
-function showProvenance() {
-  const m = window.FACT_ORDERS.meta;
-  document.getElementById("provenance").textContent =
-    `Synthetic dataset — ${intText(m.rows)} orders from ${m.source}, packed ${m.generated}. ` +
-    "Every figure on this page is computed in the browser from that file; nothing is typed in by hand.";
+function wireTips() {
+  board.addEventListener("pointerover", e => {
+    const target = e.target.closest?.("[data-tip]");
+    if (!target) return;
+    tip.textContent = target.getAttribute("data-tip");
+    tip.hidden = false;
+  });
+  board.addEventListener("pointermove", e => {
+    if (tip.hidden) return;
+    tip.style.left = Math.max(8, Math.min(e.clientX + 14, window.innerWidth - tip.offsetWidth - 8)) + "px";
+    tip.style.top = Math.max(8, e.clientY - tip.offsetHeight - 10) + "px";
+  });
+  board.addEventListener("pointerout", e => {
+    if (e.target.closest?.("[data-tip]")) tip.hidden = true;
+  });
 }
 
-buildFilters();
-wireTabs();
-showProvenance();
-render();
+function boot() {
+  rows = decode(window.FACT_ORDERS);
+  months = [...new Set(rows.map(r => r.month))].sort();
+  buildFilters();
+  wireTabs();
+  wireTheme();
+  wireTips();
+  render();
+  firstPaint = false;
+}
+
+// Two frames: the deferred scripts leave the skeleton markup on screen, and this lets it paint once
+// before the decode and the nine chart builds take the main thread.
+requestAnimationFrame(() => requestAnimationFrame(boot));

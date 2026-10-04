@@ -4,3 +4,6 @@ database/pharmacy.db
 ~$*.xlsx
 .vscode/
 *.pbix
+.env
+.env.*
+kaggle.json
