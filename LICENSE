@@ -1,0 +1,83 @@
+# Licence
+
+This repository contains two kinds of material under two different licences. Read both
+before reusing anything from it.
+
+---
+
+## 1. Code and documentation — MIT
+
+Applies to everything written for this project: the Python scripts under `database/`,
+`dashboard/`, `excel/` and `run_all.py`; the SQL under `sql/`; the dashboard's HTML, CSS
+and JavaScript; and the Markdown under `docs/`, `reports/` and `powerbi/`.
+
+```
+MIT License
+
+Copyright (c) 2026 Raghav Mishra
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+---
+
+## 2. Data — CC BY-NC-SA 4.0
+
+The analysis is built on the **Brazilian E-Commerce Public Dataset by Olist**, published on
+Kaggle at `olistbr/brazilian-ecommerce` under
+**[Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International](https://creativecommons.org/licenses/by-nc-sa/4.0/)**.
+
+That licence governs the source data **and every file derived from it**, which in this
+repository means:
+
+- `data/processed/fact_orders.csv`
+- `data/processed/dq_issue_log.csv`
+- `data/processed/query_outputs/*.csv`
+- `dashboard/data/dashboard_data.js`
+- `excel/delivery_sla_olist_marketplace.xlsx`
+- every figure quoted in `reports/` and `docs/`
+
+The raw dataset itself is **not** redistributed here — `data/external/` is excluded from
+version control, and `database/fetch_data.py` downloads it from Kaggle on demand.
+
+### What the data licence requires of you
+
+| Term | What it means here |
+|---|---|
+| **BY** — Attribution | Credit Olist as the source and link the licence. Do not imply Olist endorses this analysis. |
+| **NC** — NonCommercial | You may not use the data, or anything derived from it, for commercial purposes. |
+| **SA** — ShareAlike | If you remix or build on the derived data, distribute your version under CC BY-NC-SA 4.0 too. |
+
+The MIT licence in section 1 does **not** override any of this. You may reuse the code
+commercially; you may not reuse the data or the derived outputs commercially.
+
+### Attribution
+
+> Brazilian E-Commerce Public Dataset by Olist, available at
+> https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce,
+> licensed under CC BY-NC-SA 4.0.
+
+---
+
+## 3. A note on the figures
+
+Every number in this repository describes the Olist dataset as published. It is real
+transactional data from a real marketplace, but it covers one company over a fixed window
+(September 2016 to October 2018) and nothing here should be read as a general claim about
+e-commerce logistics, nor as a measured business outcome produced by this analysis.
