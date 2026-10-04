@@ -1,4 +1,4 @@
-"""Builds excel/olist_delivery_analysis.xlsx from the processed fact table and the DQ issue log."""
+"""Builds excel/delivery_sla_olist_marketplace.xlsx from the processed fact table and the DQ issue log."""
 
 import sys
 from pathlib import Path
@@ -15,7 +15,7 @@ from openpyxl.worksheet.table import Table, TableStyleInfo
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "database"))
 from common import APPROVAL_BUCKETS, DATA_PROCESSED, DQ_RULES, ROOT, UNKNOWN_BUCKET, log
 
-OUT = ROOT / "excel" / "olist_delivery_analysis.xlsx"
+OUT = ROOT / "excel" / "delivery_sla_olist_marketplace.xlsx"
 SAMPLE_ROWS = 500
 PER_RULE = 14
 MIN_N = 30

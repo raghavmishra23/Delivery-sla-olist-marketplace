@@ -8,150 +8,150 @@ from openpyxl import load_workbook
 
 from common import DATA_PROCESSED, QUERY_OUTPUTS, REPORTS, ROOT, log
 
-WORKBOOK = ROOT / "excel" / "pharmacy_analysis.xlsx"
-DASHBOARD_PAYLOAD = ROOT / "dashboard" / "data" / "dashboard_data.js"
+WORKBOOK = ROOT / "excel" / "delivery_sla_olist_marketplace.xlsx"
+PAYLOAD = ROOT / "dashboard" / "data" / "dashboard_data.js"
 
-# Counts and amounts must agree exactly; rates are compared at 4 decimal places.
-RATE_TOLERANCE = 5e-5
-AMOUNT_TOLERANCE = 0.005
+# Counts must agree exactly; rates to 4 decimal places; hours to the second decimal.
+RATE_TOL = 5e-5
+HOUR_TOL = 0.005
 
 KPIS = [
     ("Total orders", "count"),
     ("Delivered orders", "count"),
-    ("SLA-eligible deliveries", "count"),
+    ("SLA-eligible orders", "count"),
     ("On-time deliveries", "count"),
     ("On-time rate", "rate"),
-    ("Avg delivery hours", "amount"),
-    ("Avg delay (late only)", "amount"),
-    ("Refunded deliveries", "count"),
-    ("Refund rate", "rate"),
-    ("Total refund amount", "amount"),
+    ("Avg delivery hours", "hours"),
+    ("Avg promised hours", "hours"),
+    ("Avg delay (late only)", "hours"),
 ]
 
 
-def kpis_from_frame(f):
-    """Canonical denominators: SLA-eligible for on-time, delivered for refund rate."""
-    delivered = f[f["Is_Delivered"] == 1]
-    elig = f[f["Is_Sla_Eligible"] == 1]
-    late = f[f["Is_Late"] == 1]
-    refunded_deliveries = delivered[delivered["Refund_Flag"] == 1]
+def kpis(frame):
+    """Canonical denominators: Is_Sla_Eligible for the SLA rates, Is_Late before averaging delay."""
+    elig = frame[frame["Is_Sla_Eligible"] == 1]
+    late = frame[frame["Is_Late"] == 1]
     return {
-        "Total orders": len(f),
-        "Delivered orders": len(delivered),
-        "SLA-eligible deliveries": len(elig),
+        "Total orders": len(frame),
+        "Delivered orders": int((frame["Is_Delivered"] == 1).sum()),
+        "SLA-eligible orders": len(elig),
         "On-time deliveries": int((elig["Is_On_Time"] == 1).sum()),
         "On-time rate": (elig["Is_On_Time"] == 1).mean(),
         "Avg delivery hours": elig["Actual_Delivery_Hours"].mean(),
+        "Avg promised hours": elig["Promised_Delivery_Hours"].mean(),
         "Avg delay (late only)": late["Delay_Hours"].mean(),
-        "Refunded deliveries": len(refunded_deliveries),
-        "Refund rate": len(refunded_deliveries) / len(delivered),
-        "Total refund amount": f["Refund_Amount"].sum(),
     }
 
 
 def from_pandas():
-    return kpis_from_frame(pd.read_csv(DATA_PROCESSED / "fact_orders.csv"))
+    return kpis(pd.read_csv(DATA_PROCESSED / "fact_orders.csv"))
 
 
 def from_sql():
     """Reads the committed query outputs rather than re-running SQL, so a stale export is caught."""
-    sla = pd.read_csv(QUERY_OUTPUTS / "q02_overall_sla.csv").iloc[0]
-    refund = pd.read_csv(QUERY_OUTPUTS / "q06_refund_analysis.csv").iloc[0]
+    row = pd.read_csv(QUERY_OUTPUTS / "q02_overall_sla.csv").iloc[0]
+    pick = lambda *names: next(row[n] for n in names if n in row.index)
     return {
-        "Total orders": int(sla["Total_Orders"]),
-        "Delivered orders": int(sla["Delivered"]),
-        "SLA-eligible deliveries": int(sla["Sla_Eligible"]),
-        "On-time deliveries": int(sla["On_Time"]),
-        "On-time rate": float(sla["On_Time_Rate_Pct"]) / 100,
-        "Avg delivery hours": float(sla["Avg_Delivery_Hours"]),
-        "Avg delay (late only)": float(sla["Avg_Delay_Late_Only_Hours"]),
-        "Refunded deliveries": int(refund["Refunded_Delivered_Orders"]),
-        "Refund rate": float(refund["Refund_Rate_Pct"]) / 100,
-        "Total refund amount": float(refund["Total_Refund_Inr"]),
+        "Total orders": int(pick("Total_Orders")),
+        "Delivered orders": int(pick("Delivered", "Delivered_Orders")),
+        "SLA-eligible orders": int(pick("Sla_Eligible", "SLA_Eligible")),
+        "On-time deliveries": int(pick("On_Time", "On_Time_Orders")),
+        "On-time rate": float(pick("On_Time_Rate_Pct")) / 100,
+        "Avg delivery hours": float(pick("Avg_Delivery_Hours")),
+        "Avg promised hours": float(pick("Avg_Promised_Hours")),
+        "Avg delay (late only)": float(pick("Avg_Delay_Late_Hours")),
     }
 
 
 def from_excel():
-    """openpyxl cannot evaluate formulas, so this recomputes from the Clean_Data cells the formulas read."""
-    book = load_workbook(WORKBOOK, data_only=False)
-    sheet = book["Clean_Data"]
-    rows = sheet.iter_rows(values_only=True)
-    header = list(next(rows))
+    """openpyxl cannot evaluate formulas, so this recomputes from the cells the formulas read."""
+    book = load_workbook(WORKBOOK, read_only=True, data_only=False)
+    rows = book["Clean_Data"].iter_rows(values_only=True)
+    header = [h for h in next(rows) if h is not None]
     frame = pd.DataFrame(list(rows), columns=header)
-    for col in ("Is_Delivered", "Is_Sla_Eligible", "Is_On_Time", "Is_Late", "Refund_Flag"):
+    book.close()
+    numeric = ["Is_Delivered", "Is_Sla_Eligible", "Is_On_Time", "Is_Late",
+               "Actual_Delivery_Hours", "Promised_Delivery_Hours", "Delay_Hours"]
+    for col in numeric:
         frame[col] = pd.to_numeric(frame[col], errors="coerce")
-    for col in ("Actual_Delivery_Hours", "Delay_Hours", "Refund_Amount"):
-        frame[col] = pd.to_numeric(frame[col], errors="coerce")
-    return kpis_from_frame(frame)
+    return kpis(frame)
 
 
 def from_dashboard():
-    """Decodes the dictionary-encoded columnar payload the browser reads."""
-    text = DASHBOARD_PAYLOAD.read_text(encoding="utf-8")
+    """Decodes the payload the browser actually loads, so a packing bug cannot hide here."""
+    text = PAYLOAD.read_text(encoding="utf-8")
     payload = json.loads(text[text.index("{"):text.rindex("}") + 1])
-    cols, dicts = payload["cols"], payload["dicts"]
-    missing = {"delivered", "sla", "onTime", "actual", "delay", "refund", "refundAmt"} - set(cols)
-    if missing:
-        raise SystemExit(f"dashboard payload is missing columns {sorted(missing)}; found {sorted(cols)}")
+    alpha = payload["meta"]["alpha"]
+    index = {ch: i for i, ch in enumerate(alpha)}
 
+    def nums(key, width):
+        raw = payload["cols"][key]
+        out = []
+        for i in range(0, len(raw), width):
+            value = 0
+            for ch in raw[i:i + width]:
+                value = value * len(alpha) + index[ch]
+            out.append(value)
+        return out
+
+    flags = nums("flags", 1)
+    actual = nums("actual", 2)
+    promised = nums("promised", 2)
+    delivered = [f & 1 for f in flags]
+    eligible = [(f >> 1) & 1 for f in flags]
+    on_time = [(f >> 2) & 1 for f in flags]
     frame = pd.DataFrame({
-        "Is_Delivered": cols["delivered"],
-        "Is_Sla_Eligible": cols["sla"],
-        "Is_On_Time": cols["onTime"],
-        "Actual_Delivery_Hours": cols["actual"],
-        "Delay_Hours": cols["delay"],
-        "Refund_Flag": cols["refund"],
-        "Refund_Amount": cols["refundAmt"],
+        "Is_Delivered": delivered,
+        "Is_Sla_Eligible": eligible,
+        "Is_On_Time": [t if e else None for t, e in zip(on_time, eligible)],
+        "Actual_Delivery_Hours": [a if e else None for a, e in zip(actual, eligible)],
+        "Promised_Delivery_Hours": [p if e else None for p, e in zip(promised, eligible)],
     })
-    # The page derives Is_Late as the complement of Is_On_Time within the eligible set.
-    frame["Is_Late"] = frame["Is_On_Time"].apply(lambda v: None if v is None else 1 - v)
-    if "dstatus" in dicts:
-        pass
-    return kpis_from_frame(frame)
+    frame["Is_Late"] = [None if not e else 1 - t for t, e in zip(on_time, eligible)]
+    frame["Delay_Hours"] = frame["Actual_Delivery_Hours"] - frame["Promised_Delivery_Hours"]
+    return kpis(frame)
 
 
 def agrees(a, b, kind):
-    if a is None or b is None:
+    if a is None or b is None or pd.isna(a) or pd.isna(b):
         return False
     if kind == "count":
         return int(a) == int(b)
-    tolerance = RATE_TOLERANCE if kind == "rate" else AMOUNT_TOLERANCE
-    return abs(float(a) - float(b)) <= tolerance
+    return abs(float(a) - float(b)) <= (RATE_TOL if kind == "rate" else HOUR_TOL)
 
 
 def fmt(value, kind):
-    if value is None:
+    if value is None or pd.isna(value):
         return "-"
     if kind == "count":
         return f"{int(value):,}"
     if kind == "rate":
-        return f"{float(value) * 100:.2f}%"
+        return f"{float(value) * 100:.4f}%"
     return f"{float(value):,.2f}"
 
 
 def main():
     sources = {"SQL": from_sql(), "pandas": from_pandas()}
-    if WORKBOOK.exists():
-        sources["Excel"] = from_excel()
-    else:
-        log(f"skipping Excel: {WORKBOOK} not built yet")
-    if DASHBOARD_PAYLOAD.exists():
-        sources["Dashboard"] = from_dashboard()
-    else:
-        log(f"skipping dashboard: {DASHBOARD_PAYLOAD} not built yet")
+    for name, path, loader in [("Excel", WORKBOOK, from_excel), ("Dashboard", PAYLOAD, from_dashboard)]:
+        if path.exists():
+            sources[name] = loader()
+        else:
+            log(f"skipping {name}: {path} not built yet")
 
     names = list(sources)
     width = max(len(k) for k, _ in KPIS) + 2
-    header = "KPI".ljust(width) + "".join(n.rjust(14) for n in names) + "   Status"
+    header = "KPI".ljust(width) + "".join(n.rjust(16) for n in names) + "   Status"
     lines = [header, "-" * len(header)]
 
     failures = []
     for kpi, kind in KPIS:
         values = [sources[n].get(kpi) for n in names]
-        ok = all(agrees(values[0], v, kind) for v in values[1:])
+        # The dashboard stores hours as rounded integers, so compare it on rates and counts only.
+        checked = [(n, v) for n, v in zip(names, values) if not (n == "Dashboard" and kind == "hours")]
+        ok = all(agrees(checked[0][1], v, kind) for _, v in checked[1:])
         if not ok:
             failures.append((kpi, dict(zip(names, values))))
-        lines.append(kpi.ljust(width) + "".join(fmt(v, kind).rjust(14) for v in values)
+        lines.append(kpi.ljust(width) + "".join(fmt(v, kind).rjust(16) for v in values)
                      + ("   ok" if ok else "   MISMATCH"))
 
     report = "\n".join(lines)
@@ -161,16 +161,15 @@ def main():
     (REPORTS / "reconciliation.md").write_text(
         "# Reconciliation\n\n"
         f"Headline KPIs recomputed independently from {len(names)} sources "
-        f"({', '.join(names)}) and compared. Counts must match exactly; rates to 4 decimal places; "
-        "amounts to the paisa.\n\n"
+        f"({', '.join(names)}). Counts must match exactly, rates to four decimal places, "
+        "hours to the second decimal.\n\n"
         "```\n" + report + "\n```\n\n"
         "Produced by `database/reconcile.py`.\n\n"
-        "## What each source is\n\n"
         "| Source | How it is computed |\n|---|---|\n"
-        "| SQL | Values read from the committed query outputs in `data/processed/query_outputs/`, so a stale export fails the check. |\n"
+        "| SQL | Read from the committed query outputs in `data/processed/query_outputs/`, so a stale export fails the check. |\n"
         "| pandas | Recomputed directly from `data/processed/fact_orders.csv`. |\n"
-        "| Excel | Recomputed from the `Clean_Data` cells that the workbook's formulas read. openpyxl cannot evaluate formulas, so this verifies the workbook's inputs, not Excel's own arithmetic. |\n"
-        "| Dashboard | Decoded from the columnar payload the browser actually loads. |\n",
+        "| Excel | Recomputed from the `Clean_Data` cells the workbook's formulas read. openpyxl cannot evaluate formulas, so this verifies the workbook's inputs rather than Excel's own arithmetic. |\n"
+        "| Dashboard | Decoded from the packed payload the browser loads. Delivery hours are stored rounded there, so it is compared on counts and rates only. |\n",
         encoding="utf-8", newline="\n")
 
     if failures:
