@@ -6,7 +6,7 @@ database/olist.db
 *.pbix
 .env
 .env.*
-!.env.example
+.env.example
 kaggle.json
 data/external/
 
@@ -20,3 +20,8 @@ data/processed/sellers.csv
 data/processed/products.csv
 data/processed/geolocation.csv
 powerbi/*.pbix
+
+# Kept locally, not published
+docs/step-by-step-flow.md
+docs/sql-reference.md
+docs/overview-simple.md
