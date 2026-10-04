@@ -1,0 +1,24 @@
+Check_Name,Scope,Violations,Result
+deliveries: Actual_Delivery_Hours negative or above 500,deliveries,0,PASS
+deliveries: In Transit or Returned row carries a duration,deliveries,0,PASS
+deliveries: Promised_Delivery_Hours outside 24/48/72,deliveries,0,PASS
+deliveries: Refund_Amount above the order value,deliveries,0,PASS
+deliveries: Refund_Flag disagrees with Refund_Amount,deliveries,0,PASS
+deliveries: non-cancelled order with no delivery row,orders,0,PASS
+deliveries: order marked Refunded with no refund recorded,orders,0,PASS
+deliveries: orphan Order_ID,deliveries,0,PASS
+deliveries: refund recorded but order not marked Refunded,orders,0,PASS
+deliveries: row against a Cancelled order,deliveries,0,PASS
+fact_orders: row whose Order_ID is missing from orders,fact_orders,0,PASS
+orders: Chronic order not flagged prescription-required,orders,0,PASS
+orders: Order_Date outside Jan-Sep 2025,orders,0,PASS
+"orders: Unknown city carries a tier, or a known city does not",orders,0,PASS
+orders: duplicate Order_ID,orders,0,PASS
+prescription_verification: Pending row carries a verified time,prescription_verification,0,PASS
+prescription_verification: Rejected prescription on an order not Cancelled,orders,0,PASS
+prescription_verification: Rx order marked Not Required,orders,0,PASS
+prescription_verification: minutes recorded on a Not Required row,prescription_verification,0,PASS
+prescription_verification: non-Rx order not marked Not Required,orders,0,PASS
+prescription_verification: order with no verification row,orders,0,PASS
+prescription_verification: orphan Order_ID,prescription_verification,0,PASS
+prescription_verification: verified before submitted,prescription_verification,0,PASS

@@ -1,0 +1,106 @@
+Rule_ID,Table_Name,Order_ID,Field,Raw_Value,Action
+DQ-01,orders,ORD-00869,Order_ID,ORD-00869,"Kept the first occurrence, dropped the duplicate row"
+DQ-01,orders,ORD-01084,Order_ID,ORD-01084,"Kept the first occurrence, dropped the duplicate row"
+DQ-01,orders,ORD-01345,Order_ID,ORD-01345,"Kept the first occurrence, dropped the duplicate row"
+DQ-01,orders,ORD-01506,Order_ID,ORD-01506,"Kept the first occurrence, dropped the duplicate row"
+DQ-01,orders,ORD-01780,Order_ID,ORD-01780,"Kept the first occurrence, dropped the duplicate row"
+DQ-01,orders,ORD-02430,Order_ID,ORD-02430,"Kept the first occurrence, dropped the duplicate row"
+DQ-01,orders,ORD-02717,Order_ID,ORD-02717,"Kept the first occurrence, dropped the duplicate row"
+DQ-01,orders,ORD-02791,Order_ID,ORD-02791,"Kept the first occurrence, dropped the duplicate row"
+DQ-01,orders,ORD-02805,Order_ID,ORD-02805,"Kept the first occurrence, dropped the duplicate row"
+DQ-01,orders,ORD-02920,Order_ID,ORD-02920,"Kept the first occurrence, dropped the duplicate row"
+DQ-02,orders,ORD-00439,Order_ID,ORD-00439,Excluded every row of the conflicting set; order is absent from all analysis
+DQ-02,orders,ORD-00439,Order_ID,ORD-00439,Excluded every row of the conflicting set; order is absent from all analysis
+DQ-02,orders,ORD-01210,Order_ID,ORD-01210,Excluded every row of the conflicting set; order is absent from all analysis
+DQ-02,orders,ORD-01210,Order_ID,ORD-01210,Excluded every row of the conflicting set; order is absent from all analysis
+DQ-02,orders,ORD-01689,Order_ID,ORD-01689,Excluded every row of the conflicting set; order is absent from all analysis
+DQ-02,orders,ORD-01689,Order_ID,ORD-01689,Excluded every row of the conflicting set; order is absent from all analysis
+DQ-02,orders,ORD-02070,Order_ID,ORD-02070,Excluded every row of the conflicting set; order is absent from all analysis
+DQ-02,orders,ORD-02070,Order_ID,ORD-02070,Excluded every row of the conflicting set; order is absent from all analysis
+DQ-02,orders,ORD-02163,Order_ID,ORD-02163,Excluded every row of the conflicting set; order is absent from all analysis
+DQ-02,orders,ORD-02163,Order_ID,ORD-02163,Excluded every row of the conflicting set; order is absent from all analysis
+DQ-03,prescription_verification,ORD-00439,Order_ID,ORD-00439,Excluded from relational analysis; no matching order
+DQ-03,deliveries,ORD-00439,Order_ID,ORD-00439,Excluded from relational analysis; no matching order
+DQ-03,prescription_verification,ORD-01210,Order_ID,ORD-01210,Excluded from relational analysis; no matching order
+DQ-03,deliveries,ORD-01210,Order_ID,ORD-01210,Excluded from relational analysis; no matching order
+DQ-03,prescription_verification,ORD-01689,Order_ID,ORD-01689,Excluded from relational analysis; no matching order
+DQ-03,deliveries,ORD-01689,Order_ID,ORD-01689,Excluded from relational analysis; no matching order
+DQ-03,prescription_verification,ORD-02070,Order_ID,ORD-02070,Excluded from relational analysis; no matching order
+DQ-03,deliveries,ORD-02070,Order_ID,ORD-02070,Excluded from relational analysis; no matching order
+DQ-03,prescription_verification,ORD-02163,Order_ID,ORD-02163,Excluded from relational analysis; no matching order
+DQ-03,deliveries,ORD-02163,Order_ID,ORD-02163,Excluded from relational analysis; no matching order
+DQ-03,prescription_verification,ORD-09001,Order_ID,ORD-09001,Excluded from relational analysis; no matching order
+DQ-03,prescription_verification,ORD-09002,Order_ID,ORD-09002,Excluded from relational analysis; no matching order
+DQ-03,deliveries,ORD-09003,Order_ID,ORD-09003,Excluded from relational analysis; no matching order
+DQ-03,deliveries,ORD-09004,Order_ID,ORD-09004,Excluded from relational analysis; no matching order
+DQ-04,orders,ORD-00050,Customer_City,,Imputed Hyderabad from the customer's other orders
+DQ-04,orders,ORD-00264,Customer_City,,Imputed Chennai from the customer's other orders
+DQ-04,orders,ORD-00378,Customer_City,,Imputed Bengaluru from the customer's other orders
+DQ-04,orders,ORD-00833,Customer_City,,No unambiguous source city; labelled Unknown and excluded from city rankings
+DQ-04,orders,ORD-00884,Customer_City,,Imputed Lucknow from the customer's other orders
+DQ-04,orders,ORD-00972,Customer_City,,Imputed Mumbai from the customer's other orders
+DQ-04,orders,ORD-01008,Customer_City,,Imputed Chennai from the customer's other orders
+DQ-04,orders,ORD-01014,Customer_City,,Imputed Mumbai from the customer's other orders
+DQ-04,orders,ORD-01145,Customer_City,,Imputed Bengaluru from the customer's other orders
+DQ-04,orders,ORD-01225,Customer_City,,No unambiguous source city; labelled Unknown and excluded from city rankings
+DQ-04,orders,ORD-01371,Customer_City,,Imputed Mumbai from the customer's other orders
+DQ-04,orders,ORD-01692,Customer_City,,No unambiguous source city; labelled Unknown and excluded from city rankings
+DQ-04,orders,ORD-01867,Customer_City,,No unambiguous source city; labelled Unknown and excluded from city rankings
+DQ-04,orders,ORD-02151,Customer_City,,Imputed Indore from the customer's other orders
+DQ-04,orders,ORD-02405,Customer_City,,No unambiguous source city; labelled Unknown and excluded from city rankings
+DQ-04,orders,ORD-02407,Customer_City,,Imputed Bengaluru from the customer's other orders
+DQ-04,orders,ORD-02479,Customer_City,,No unambiguous source city; labelled Unknown and excluded from city rankings
+DQ-04,orders,ORD-02816,Customer_City,,Imputed Chennai from the customer's other orders
+DQ-04,orders,ORD-02951,Customer_City,,Imputed Hyderabad from the customer's other orders
+DQ-04,orders,ORD-02972,Customer_City,,Imputed Chennai from the customer's other orders
+DQ-05,deliveries,ORD-00493,Actual_Delivery_Hours,-6.5,"Impossible duration; nulled the value, kept the order in counts"
+DQ-05,deliveries,ORD-00629,Actual_Delivery_Hours,-2.0,"Impossible duration; nulled the value, kept the order in counts"
+DQ-05,deliveries,ORD-00962,Actual_Delivery_Hours,-18.25,"Impossible duration; nulled the value, kept the order in counts"
+DQ-05,deliveries,ORD-01198,Actual_Delivery_Hours,-1.5,"Impossible duration; nulled the value, kept the order in counts"
+DQ-05,deliveries,ORD-01286,Actual_Delivery_Hours,-41.0,"Impossible duration; nulled the value, kept the order in counts"
+DQ-05,deliveries,ORD-01462,Actual_Delivery_Hours,980.0,"Impossible duration; nulled the value, kept the order in counts"
+DQ-05,deliveries,ORD-02102,Actual_Delivery_Hours,612.5,"Impossible duration; nulled the value, kept the order in counts"
+DQ-05,deliveries,ORD-02539,Actual_Delivery_Hours,1440.0,"Impossible duration; nulled the value, kept the order in counts"
+DQ-05,deliveries,ORD-02669,Actual_Delivery_Hours,745.25,"Impossible duration; nulled the value, kept the order in counts"
+DQ-05,deliveries,ORD-02851,Actual_Delivery_Hours,533.0,"Impossible duration; nulled the value, kept the order in counts"
+DQ-06,prescription_verification,ORD-00295,Prescription_Verified_Time,2025-02-03 18:33:22,"Verified before submitted; nulled the verified time and minutes, kept the order"
+DQ-06,prescription_verification,ORD-00651,Prescription_Verified_Time,2025-03-11 12:22:04,"Verified before submitted; nulled the verified time and minutes, kept the order"
+DQ-06,prescription_verification,ORD-00710,Prescription_Verified_Time,2025-03-19 05:45:41,"Verified before submitted; nulled the verified time and minutes, kept the order"
+DQ-06,prescription_verification,ORD-00798,Prescription_Verified_Time,2025-03-27 12:30:13,"Verified before submitted; nulled the verified time and minutes, kept the order"
+DQ-06,prescription_verification,ORD-01475,Prescription_Verified_Time,2025-05-31 15:29:36,"Verified before submitted; nulled the verified time and minutes, kept the order"
+DQ-06,prescription_verification,ORD-01960,Prescription_Verified_Time,2025-07-10 15:45:49,"Verified before submitted; nulled the verified time and minutes, kept the order"
+DQ-06,prescription_verification,ORD-02347,Prescription_Verified_Time,2025-08-10 17:12:38,"Verified before submitted; nulled the verified time and minutes, kept the order"
+DQ-06,prescription_verification,ORD-02703,Prescription_Verified_Time,2025-09-09 12:48:06,"Verified before submitted; nulled the verified time and minutes, kept the order"
+DQ-07,prescription_verification,ORD-00086,Prescription_Verification_Minutes,38.95,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-00173,Prescription_Verification_Minutes,41.56,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-00888,Prescription_Verification_Minutes,66.34,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-01300,Prescription_Verification_Minutes,86.21,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-01524,Prescription_Verification_Minutes,10.5,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-01588,Prescription_Verification_Minutes,45.43,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-02141,Prescription_Verification_Minutes,40.8,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-02217,Prescription_Verification_Minutes,91.83,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-02366,Prescription_Verification_Minutes,68.54,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-02909,Prescription_Verification_Minutes,90.94,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-02986,Prescription_Verification_Minutes,50.29,Minutes recorded on a Not Required row; nulled the minutes
+DQ-07,prescription_verification,ORD-02987,Prescription_Verification_Minutes,61.5,Minutes recorded on a Not Required row; nulled the minutes
+DQ-08,deliveries,ORD-00039,Refund_Flag,1,Flag contradicts Refund_Amount 0.00; reset the flag and the order status to match the amount
+DQ-08,deliveries,ORD-00120,Refund_Flag,0,Flag contradicts Refund_Amount 1369.50; reset the flag and the order status to match the amount
+DQ-08,deliveries,ORD-00273,Refund_Flag,0,Flag contradicts Refund_Amount 263.18; reset the flag and the order status to match the amount
+DQ-08,deliveries,ORD-00599,Refund_Flag,0,Flag contradicts Refund_Amount 344.32; reset the flag and the order status to match the amount
+DQ-08,deliveries,ORD-00756,Refund_Flag,1,Flag contradicts Refund_Amount 0.00; reset the flag and the order status to match the amount
+DQ-08,deliveries,ORD-00886,Refund_Flag,0,Flag contradicts Refund_Amount 279.48; reset the flag and the order status to match the amount
+DQ-08,deliveries,ORD-01059,Refund_Flag,1,Flag contradicts Refund_Amount 0.00; reset the flag and the order status to match the amount
+DQ-08,deliveries,ORD-02323,Refund_Flag,0,Flag contradicts Refund_Amount 386.48; reset the flag and the order status to match the amount
+DQ-08,deliveries,ORD-02436,Refund_Flag,1,Flag contradicts Refund_Amount 0.00; reset the flag and the order status to match the amount
+DQ-08,deliveries,ORD-02894,Refund_Flag,1,Flag contradicts Refund_Amount 0.00; reset the flag and the order status to match the amount
+DQ-09,deliveries,ORD-00149,Order_ID,ORD-00149,"Delivery row against a Cancelled order; excluded the row, kept the order"
+DQ-09,deliveries,ORD-00803,Order_ID,ORD-00803,"Delivery row against a Cancelled order; excluded the row, kept the order"
+DQ-09,deliveries,ORD-01340,Order_ID,ORD-01340,"Delivery row against a Cancelled order; excluded the row, kept the order"
+DQ-09,deliveries,ORD-02511,Order_ID,ORD-02511,"Delivery row against a Cancelled order; excluded the row, kept the order"
+DQ-09,deliveries,ORD-02543,Order_ID,ORD-02543,"Delivery row against a Cancelled order; excluded the row, kept the order"
+DQ-10,deliveries,ORD-00268,Actual_Delivery_Hours,,"Delivered without a duration; status kept, excluded from SLA denominators"
+DQ-10,deliveries,ORD-00410,Actual_Delivery_Hours,,"Delivered without a duration; status kept, excluded from SLA denominators"
+DQ-10,deliveries,ORD-00680,Actual_Delivery_Hours,,"Delivered without a duration; status kept, excluded from SLA denominators"
+DQ-10,deliveries,ORD-02123,Actual_Delivery_Hours,,"Delivered without a duration; status kept, excluded from SLA denominators"
+DQ-10,deliveries,ORD-02529,Actual_Delivery_Hours,,"Delivered without a duration; status kept, excluded from SLA denominators"
+DQ-10,deliveries,ORD-02760,Actual_Delivery_Hours,,"Delivered without a duration; status kept, excluded from SLA denominators"

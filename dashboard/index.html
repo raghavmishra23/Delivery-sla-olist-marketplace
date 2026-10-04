@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>E-Pharmacy Delivery SLA Dashboard</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="masthead">
+    <h1>E-Pharmacy Delivery Performance &amp; Prescription Verification</h1>
+    <span class="disclaimer">Synthetic data — generated for portfolio analysis, not real company performance.</span>
+  </div>
+
+  <div class="filters">
+    <div class="filter">
+      <label for="f-from">Month from</label>
+      <select id="f-from"></select>
+    </div>
+    <div class="filter">
+      <label for="f-to">Month to</label>
+      <select id="f-to"></select>
+    </div>
+    <div class="filter">
+      <label for="f-city">City</label>
+      <select id="f-city"></select>
+    </div>
+    <div class="filter">
+      <label for="f-cat">Category</label>
+      <select id="f-cat"></select>
+    </div>
+    <div class="filter">
+      <label for="f-partner">Delivery partner</label>
+      <select id="f-partner"></select>
+    </div>
+    <div class="filter">
+      <label for="f-rx">Prescription</label>
+      <select id="f-rx"></select>
+    </div>
+    <button id="reset" type="button">Reset filters</button>
+  </div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab" id="tab-exec" role="tab" aria-selected="true" aria-controls="page-exec">Executive summary</button>
+    <button class="tab" id="tab-ops" role="tab" aria-selected="false" aria-controls="page-ops">Logistics &amp; prescription</button>
+  </nav>
+</header>
+
+<main>
+
+<section class="page" id="page-exec" role="tabpanel" aria-labelledby="tab-exec">
+  <div class="row" id="kpis"></div>
+
+  <div class="row">
+    <div class="card w4">
+      <h2>On-time vs late</h2>
+      <p class="sub">Delivered orders with a recorded delivery time</p>
+      <div id="c-split"></div>
+    </div>
+    <div class="card w8">
+      <h2>On-time rate by city</h2>
+      <p class="sub" id="city-sub"></p>
+      <div id="c-city"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card w12">
+      <h2>Monthly on-time rate and order volume</h2>
+      <p class="sub">Line: on-time rate (left). Bars: orders placed (right).</p>
+      <div id="c-trend"></div>
+    </div>
+  </div>
+</section>
+
+<section class="page" id="page-ops" role="tabpanel" aria-labelledby="tab-ops" hidden>
+  <div class="row">
+    <div class="card w5">
+      <h2>Late share by delivery partner</h2>
+      <p class="sub">Bar length is the breach rate; n is the partner's SLA-eligible deliveries.</p>
+      <div id="c-partner"></div>
+    </div>
+    <div class="card w7">
+      <h2>On-time rate by city and partner</h2>
+      <p class="sub" id="matrix-sub"></p>
+      <div id="c-matrix"></div>
+      <p class="note" id="matrix-note"></p>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card w6">
+      <h2>SLA breach rate by verification time</h2>
+      <p class="sub">Prescription orders only, grouped by minutes to verify</p>
+      <div id="c-bucket"></div>
+      <p class="note">Verification happens <strong>inside</strong> the delivery window — the clock starts when the order is placed, so verification minutes are never added on top of delivery hours. These buckets are segmentation, not causation: slow verification and slow delivery can share an upstream cause.</p>
+    </div>
+    <div class="card w6">
+      <h2>Chronic vs OTC</h2>
+      <p class="sub">Same denominators as the KPI cards, split by medicine category</p>
+      <div id="c-cat"></div>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="card w6">
+      <h2>Refund value by city</h2>
+      <p class="sub">Total refunded amount; refund incidence is reported separately in the KPI row.</p>
+      <div id="c-refund-city"></div>
+    </div>
+    <div class="card w6">
+      <h2>Refund value by partner</h2>
+      <p class="sub">Total refunded amount on delivered orders</p>
+      <div id="c-refund-partner"></div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer id="provenance"></footer>
+
+<script src="data/dashboard_data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

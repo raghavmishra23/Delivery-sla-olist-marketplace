@@ -1,0 +1,4 @@
+Table_Name,Rows_Loaded,Unknown_City,Null_City_Tier,Null_Duration,Null_Verification_Minutes
+orders,2995,6,6,0,0
+prescription_verification,2995,0,0,0,1480
+deliveries,2790,0,0,50,0
