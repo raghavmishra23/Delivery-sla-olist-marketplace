@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+database/pharmacy.db
+~$*.xlsx
+.vscode/
