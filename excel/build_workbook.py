@@ -19,6 +19,7 @@ OUT = ROOT / "excel" / "delivery_sla_olist_marketplace.xlsx"
 SAMPLE_ROWS = 500
 PER_RULE = 14
 MIN_N = 30
+STATE_MIN_N = 300
 SELLER_MIN_N = 200
 FACT = "fact"
 STATE_TBL = "dim_state"
@@ -107,11 +108,11 @@ def rate_cf(ws, rng, kind):
         )
 
 
-def dim_cf(ws, rng, n_col):
+def dim_cf(ws, rng, n_col, floor=MIN_N):
     first_row = "".join(ch for ch in rng.split(":")[0] if ch.isdigit())
     ws.conditional_formatting.add(
         rng,
-        FormulaRule(formula=[f"${n_col}{first_row}<{MIN_N}"], font=Font(name=FONT, italic=True, color="9A9E9A")),
+        FormulaRule(formula=[f"${n_col}{first_row}<{floor}"], font=Font(name=FONT, italic=True, color="9A9E9A")),
     )
 
 
@@ -193,6 +194,7 @@ def write_readme(wb):
         ("Currency", "Order_Value and Freight_Value are in Brazilian reais (R$)."),
         ("Product_Category", "Blank where no English category name exists or the order has no items; the blank bucket is kept in category cuts."),
         ("Small samples", f"Cells with fewer than {MIN_N} eligible orders show their n, are greyed and are excluded from ranking."),
+        ("State ranking floor", f"States are ranked only with at least {STATE_MIN_N} eligible orders (about 0.3% of the eligible population, roughly +/-4 points of sampling interval at these rates). A rank is far less stable than a rate: at a floor of {MIN_N}, the smallest states (a few dozen orders) top the strongest-states list while the largest state falls off it. Every state still appears with its n; those under the floor are greyed and carry no rank."),
         ("Multi-seller orders", "Orders with several sellers are attributed to the highest-priced item's seller (DQ-13), so seller figures carry that attribution limit."),
         ("Colour bands", "On-time rate: green at 95% or above, amber at 90% or above, red below. Late / breach rate: green up to 5%, amber up to 10%, red above. Low-review rate: green up to 10%, amber up to 15%, red above. Cancellation rate: green up to 1%, amber up to 2%, red above."),
     ]
@@ -359,7 +361,7 @@ def write_dim_state(wb, states):
 
 def write_geo(wb, fact, states):
     ws = wb.create_sheet("Geography_Summary")
-    title(ws, "Geography summary", f"By customer state. Rank on on-time rate uses states with at least {MIN_N} eligible orders; low-review rate is over eligible orders with a review.")
+    title(ws, "Geography summary", f"By customer state. Every state is listed with its n; rank on on-time rate is given only to states with at least {STATE_MIN_N} eligible orders; low-review rate is over eligible orders with a review.")
     elig = fact[fact["Is_Sla_Eligible"] == 1]
     codes = list(elig.groupby("Customer_State")["Is_On_Time"].mean().sort_values().index)
     head = ["State", "Code", "Region", "Orders", "SLA-eligible (n)", "On-time", "Late", "On-time rate", "Avg delivery hrs",
@@ -382,8 +384,8 @@ def write_geo(wb, fact, states):
         put(ws, f"K{r}", f'=COUNTIFS({s},{col("Is_Sla_Eligible")},1,{col("Is_Low_Review")},">=0")', FMT_INT)
         put(ws, f"L{r}", f'=COUNTIFS({s},{col("Is_Sla_Eligible")},1,{col("Is_Low_Review")},1)', FMT_INT)
         put(ws, f"M{r}", f'=IFERROR(L{r}/K{r},"n/a")', FMT_PCT)
-        put(ws, f"N{r}", f'=IF(E{r}>={MIN_N},COUNTIFS($E${first}:$E${last},">={MIN_N}",$H${first}:$H${last},">"&H{r})+1,"-")', FMT_INT)
-        put(ws, f"O{r}", f'=IF(E{r}<{MIN_N},"n = "&E{r}&", under {MIN_N}, not ranked","n = "&E{r})', color=MUTED)
+        put(ws, f"N{r}", f'=IF(E{r}>={STATE_MIN_N},COUNTIFS($E${first}:$E${last},">={STATE_MIN_N}",$H${first}:$H${last},">"&H{r})+1,"-")', FMT_INT)
+        put(ws, f"O{r}", f'=IF(E{r}<{STATE_MIN_N},"n = "&E{r}&", under {STATE_MIN_N}, not ranked","n = "&E{r})', color=MUTED)
     t = last + 1
     put(ws, f"A{t}", "All states", bold=True)
     for c in "DEFGKL":
@@ -395,7 +397,7 @@ def write_geo(wb, fact, states):
     body_borders(ws, range(first, t + 1), 1, len(head))
     rate_cf(ws, f"H{first}:H{t}", "otd")
     rate_cf(ws, f"M{first}:M{t}", "lowrev")
-    dim_cf(ws, f"A{first}:O{last}", "E")
+    dim_cf(ws, f"A{first}:O{last}", "E", STATE_MIN_N)
 
     region_of = elig["Customer_State"].map(states.set_index("State_Code")["Region"])
     regions = elig.groupby(region_of)["Is_On_Time"].mean().sort_values().index
@@ -476,11 +478,11 @@ def write_sellers(wb, fact):
         put(ws, f"E{r}", f"=COUNTIFS({s},{col('Is_Late')},1)", FMT_INT)
         put(ws, f"F{r}", f'=IFERROR(E{r}/D{r},"n/a")', FMT_PCT)
         put(ws, f"G{r}", f'=IFERROR(AVERAGEIFS({col("Delay_Hours")},{s},{col("Is_Late")},1),"n/a")', FMT_HRS)
-        put(ws, f"H{r}", f'=IF(D{r}>={MIN_N},COUNTIFS($D${f2}:$D${l2},">={MIN_N}",$F${f2}:$F${l2},">"&F{r})+1,"-")', FMT_INT)
-        put(ws, f"I{r}", f'=IF(D{r}<{MIN_N},"n = "&D{r}&", under {MIN_N}, not ranked","n = "&D{r})', color=MUTED)
+        put(ws, f"H{r}", f'=IF(D{r}>={STATE_MIN_N},COUNTIFS($D${f2}:$D${l2},">={STATE_MIN_N}",$F${f2}:$F${l2},">"&F{r})+1,"-")', FMT_INT)
+        put(ws, f"I{r}", f'=IF(D{r}<{STATE_MIN_N},"n = "&D{r}&", under {STATE_MIN_N}, not ranked","n = "&D{r})', color=MUTED)
     body_borders(ws, range(f2, l2 + 1), 1, len(head2))
     rate_cf(ws, f"F{f2}:F{l2}", "late")
-    dim_cf(ws, f"A{f2}:I{l2}", "D")
+    dim_cf(ws, f"A{f2}:I{l2}", "D", STATE_MIN_N)
     ws.freeze_panes = "B5"
     set_widths(ws, [36, 20, 8, 15, 16, 9, 10, 18, 11, 12, 14, 11, 30])
     bar(ws, f"O{top}", "Late % by seller state (largest 10 by volume)",
@@ -588,11 +590,11 @@ def write_reviews(wb, fact):
         put(ws, f"C{r}", f'=COUNTIFS({s},{col("Is_Low_Review")},">=0")', FMT_INT)
         put(ws, f"D{r}", f'=COUNTIFS({s},{col("Is_Low_Review")},1)', FMT_INT)
         put(ws, f"E{r}", f'=IFERROR(D{r}/C{r},"n/a")', FMT_PCT)
-        put(ws, f"F{r}", f'=IF(C{r}>={MIN_N},COUNTIFS($C${f2}:$C${l2},">={MIN_N}",$E${f2}:$E${l2},">"&E{r})+1,"-")', FMT_INT)
-        put(ws, f"G{r}", f'=IF(C{r}<{MIN_N},"n = "&C{r}&", under {MIN_N}, not ranked","n = "&C{r})', color=MUTED)
+        put(ws, f"F{r}", f'=IF(C{r}>={STATE_MIN_N},COUNTIFS($C${f2}:$C${l2},">={STATE_MIN_N}",$E${f2}:$E${l2},">"&E{r})+1,"-")', FMT_INT)
+        put(ws, f"G{r}", f'=IF(C{r}<{STATE_MIN_N},"n = "&C{r}&", under {STATE_MIN_N}, not ranked","n = "&C{r})', color=MUTED)
     body_borders(ws, range(f2, l2 + 1), 1, 7)
     rate_cf(ws, f"E{f2}:E{l2}", "lowrev")
-    dim_cf(ws, f"A{f2}:G{l2}", "C")
+    dim_cf(ws, f"A{f2}:G{l2}", "C", STATE_MIN_N)
     ws.freeze_panes = "A4"
     set_widths(ws, [58, 16, 16, 16, 16, 12, 30])
     bar(ws, "H4", "Review score share: on time vs late",
@@ -632,10 +634,10 @@ def write_howto(wb, fact, states):
     title(ws, "Pivot tables on Clean_Data", "Select any cell in the Clean_Data table, then Insert > PivotTable > New Worksheet. Expected readings are computed from the same table.")
     elig = fact[fact["Is_Sla_Eligible"] == 1]
     state = elig.groupby("Customer_State")["Is_On_Time"].agg(["mean", "size"])
-    state = state[state["size"] >= MIN_N]
+    state = state[state["size"] >= STATE_MIN_N]
     names = states.set_index("State_Code")["State_Name"]
     month = elig.groupby("Order_Month")["Is_On_Time"].agg(["mean", "size"])
-    month = month[month["size"] >= MIN_N]
+    month = month[month["size"] >= MIN_N].iloc[1:-1]
     one_star = elig[elig["Review_Score"].notna()].groupby("Is_Late")["Review_Score"].apply(lambda s: (s == 1).mean())
     bucket = elig.groupby("Approval_Bucket")["Is_Late"].mean()
 
@@ -644,11 +646,11 @@ def write_howto(wb, fact, states):
             "Rows: Customer_State (codes; match to names on Dim_State). Values: Is_On_Time, summarised as Average, format 0.0%.",
             "Is_On_Time is blank for orders that are not SLA-eligible and Average skips blanks, so the result already divides by SLA-eligible orders.",
             "Add Is_Sla_Eligible as Sum to show n beside each state. Sort the rate column ascending.",
-            f"Expect {names[state['mean'].idxmin()]} lowest at {state['mean'].min():.1%} and {names[state['mean'].idxmax()]} highest at {state['mean'].max():.1%} among states with n of {MIN_N} or more.",
+            f"Expect {names[state['mean'].idxmin()]} lowest at {state['mean'].min():.1%} and {names[state['mean'].idxmax()]} highest at {state['mean'].max():.1%} among states with at least {STATE_MIN_N} eligible orders (n = {int(state.loc[state["mean"].idxmin(), "size"]):,} and {int(state.loc[state["mean"].idxmax(), "size"]):,}).",
         ]),
         ("2. Monthly on-time trend", [
             "Rows: Order_Month. Values: Is_On_Time (Average) and Is_Sla_Eligible (Sum). Insert > PivotChart > Line.",
-            f"Expect the weakest month to be {month['mean'].idxmin()} at {month['mean'].min():.1%} and the strongest {month['mean'].idxmax()} at {month['mean'].max():.1%}.",
+            f"Expect the weakest month to be {month['mean'].idxmin()} at {month['mean'].min():.1%} and the strongest {month['mean'].idxmax()} at {month['mean'].max():.1%}, leaving out the first and last months, which are partial.",
         ]),
         ("3. Breach rate by approval bucket", [
             "Rows: Approval_Bucket. Values: Is_Late (Average), Is_Sla_Eligible (Sum), Actual_Delivery_Hours (Average).",

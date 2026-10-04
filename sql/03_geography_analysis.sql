@@ -8,8 +8,14 @@
 --                   review is not a zero score, so orders without one are excluded from the rate and
 --                   counted separately in Reviewed_Orders.
 -- On-time is the stored date-rule flag; durations are timestamp differences in hours (see 02 header).
--- Ranking: RANK() over on-time rate, suppressed on any cell under 30 SLA-eligible orders. Those cells
--- still appear with their n so the thinness is visible rather than silently dropped.
+-- RANKING FLOOR: 300 SLA-eligible orders, project-wide, for every geography cell ranked anywhere.
+-- A cell below it keeps its row and its n but gets a NULL rank and a Rank_Note saying so; nothing is
+-- dropped. The floor is a judgement call, not a derived constant. 30 would be proportionally about
+-- thirty times looser on 96,470 eligible orders than it was on the dataset it came from, and rank is far
+-- less stable than rate: at a 30 floor the strongest-states list is topped by AP (n=67) and AC (n=80)
+-- while SP (n=40,494) does not appear. 300 is roughly 0.3% of the eligible population, carries about a
+-- +/-4pp interval at these rates, and still admits the states that carry the finding - AL (397),
+-- SE (335) and PI (476). 21 of 27 states clear it; AC, AM, AP, RO, RR and TO do not.
 -- Result sets: by customer state, by customer city, seller state -> customer state routes, and the
 -- same-state vs cross-state summary that motivates the route cut.
 
@@ -46,14 +52,15 @@ SELECT Customer_State, Orders, Sla_Eligible, Late,
        ROUND(100.0 * Low_Reviews / NULLIF(Reviewed_Orders, 0), 2)    AS Low_Review_Rate_Pct,
        -- Share of every late order nationally, so a strong-rate but huge state stays visible.
        ROUND(100.0 * Late / SUM(Late) OVER (), 2)                    AS Late_Share_Pct,
-       CASE WHEN Sla_Eligible < 30 THEN 'n < 30 - not ranked'
-            ELSE CAST(RANK() OVER (ORDER BY CASE WHEN Sla_Eligible >= 30
-                                                 THEN 1.0 * (Sla_Eligible - Late) / Sla_Eligible END DESC) AS TEXT)
-       END                                                           AS Otd_Rank
+       CASE WHEN Sla_Eligible >= 300
+            THEN RANK() OVER (ORDER BY CASE WHEN Sla_Eligible >= 300
+                                            THEN 1.0 * (Sla_Eligible - Late) / Sla_Eligible END DESC) END AS Otd_Rank,
+       CASE WHEN Sla_Eligible < 300 THEN 'n < 300 - not ranked' ELSE '' END AS Rank_Note
 FROM state_stats
 ORDER BY On_Time_Rate_Pct;
 
--- Customer cities with at least 200 SLA-eligible orders, so every row here is rankable.
+-- Customer cities with at least 200 SLA-eligible orders. Display threshold and ranking floor differ on
+-- purpose: cities between 200 and 299 stay visible with their n but carry no rank.
 -- City names arrive lower-cased and unaccented from the source and are left as they are.
 WITH city_stats AS (
     SELECT c.Customer_City,
@@ -74,12 +81,18 @@ SELECT Customer_City, Customer_State, Sla_Eligible, Late,
        ROUND(100.0 * (Sla_Eligible - Late) / Sla_Eligible, 2)     AS On_Time_Rate_Pct,
        Avg_Delivery_Hours, Avg_Delay_Late_Hours,
        ROUND(100.0 * Low_Reviews / NULLIF(Reviewed_Orders, 0), 2) AS Low_Review_Rate_Pct,
-       RANK() OVER (ORDER BY 1.0 * (Sla_Eligible - Late) / Sla_Eligible DESC) AS Otd_Rank
+       CASE WHEN Sla_Eligible >= 300
+            THEN RANK() OVER (ORDER BY CASE WHEN Sla_Eligible >= 300
+                                            THEN 1.0 * (Sla_Eligible - Late) / Sla_Eligible END DESC) END AS Otd_Rank,
+       CASE WHEN Sla_Eligible < 300 THEN 'n < 300 - not ranked' ELSE '' END AS Rank_Note
 FROM city_stats
 ORDER BY On_Time_Rate_Pct;
 
--- Seller state -> customer state routes with at least 30 SLA-eligible orders. Seller attribution is the
--- primary item (DQ-13), so a multi-seller order counts once against its highest-priced seller.
+-- Seller state -> customer state routes with at least 30 SLA-eligible orders, ranked only at 300 and
+-- above. Most routes are thin - 38 of 124 clear the floor - so the rank column is sparse here by design;
+-- the same-state against cross-state summary below is the comparison that carries the weight.
+-- Seller attribution is the primary item (DQ-13), so a multi-seller order counts once against its
+-- highest-priced seller.
 WITH route_stats AS (
     SELECT s.Seller_State,
            c.Customer_State,
@@ -99,7 +112,10 @@ SELECT Seller_State, Customer_State, Sla_Eligible, Late,
        ROUND(100.0 * Late / Sla_Eligible, 2) AS Late_Pct,
        Avg_Delivery_Hours, Avg_Delay_Late_Hours,
        CASE WHEN Seller_State = Customer_State THEN 'Same state' ELSE 'Cross state' END AS Route_Type,
-       RANK() OVER (ORDER BY 1.0 * Late / Sla_Eligible DESC) AS Late_Rank
+       CASE WHEN Sla_Eligible >= 300
+            THEN RANK() OVER (ORDER BY CASE WHEN Sla_Eligible >= 300
+                                            THEN 1.0 * Late / Sla_Eligible END DESC) END AS Late_Rank,
+       CASE WHEN Sla_Eligible < 300 THEN 'n < 300 - not ranked' ELSE '' END AS Rank_Note
 FROM route_stats
 ORDER BY Late_Pct DESC;
 

@@ -50,6 +50,8 @@ GROUP BY Is_On_Time
 ORDER BY Is_On_Time DESC;
 
 -- Low-review rate by customer state, beside the on-time rate so the two can be read together.
+-- Geography rank, so it takes the project-wide 300 floor (see the header of 03_geography_analysis.sql);
+-- here the floor applies to reviewed orders, which is this rate's denominator.
 WITH state_reviews AS (
     SELECT c.Customer_State,
            SUM(o.Is_Sla_Eligible)                                                      AS Sla_Eligible,
@@ -68,10 +70,10 @@ SELECT Customer_State, Sla_Eligible, Late,
        Reviewed_Orders, Low_Reviews,
        ROUND(100.0 * Low_Reviews / NULLIF(Reviewed_Orders, 0), 2) AS Low_Review_Rate_Pct,
        Avg_Review_Score,
-       CASE WHEN Reviewed_Orders < 30 THEN 'n < 30 - not ranked'
-            ELSE CAST(RANK() OVER (ORDER BY CASE WHEN Reviewed_Orders >= 30
-                                                 THEN 1.0 * Low_Reviews / Reviewed_Orders END DESC) AS TEXT)
-       END                                                        AS Low_Review_Rank
+       CASE WHEN Reviewed_Orders >= 300
+            THEN RANK() OVER (ORDER BY CASE WHEN Reviewed_Orders >= 300
+                                            THEN 1.0 * Low_Reviews / Reviewed_Orders END DESC) END AS Low_Review_Rank,
+       CASE WHEN Reviewed_Orders < 300 THEN 'n < 300 - not ranked' ELSE '' END AS Rank_Note
 FROM state_reviews
 ORDER BY Low_Review_Rate_Pct DESC;
 

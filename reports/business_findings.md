@@ -36,7 +36,11 @@ Rebuild the whole set with `database/clean_data.py` → `load_data.py` → `run_
 - **Stage decomposition:** `Approval_Hours` and `Handoff_Hours` are both measured from the purchase
   timestamp, so approval is a **sub-interval of** handoff, not a stage beside it. `Handoff_Hours +
   Transit_Hours = Actual_Delivery_Hours`. The three are never stacked, because that double-counts approval.
-- **Small samples:** any cell under 30 SLA-eligible orders shows its n and is excluded from ranking claims.
+- **Ranking floor:** **300** SLA-eligible orders for every geography cell — state, city or route. A cell
+  below it keeps its row and its n but carries no rank and no best/worst label. 300 is roughly 0.3% of the
+  eligible population and gives about a ±4pp interval at these rates; 21 of the 27 states clear it. The
+  floor is a judgement call, not a derived constant. Seller-level cells keep a floor of 30, since a seller
+  is managed individually and a state is not.
 
 ---
 
@@ -52,19 +56,23 @@ Weakest states, each with its SLA-eligible n *(`q03_geography_analysis.csv`, all
 
 | Rank | State | Eligible n | On-time % | Avg delivery h | Avg delay, late | Low-review % |
 |---|---|---|---|---|---|---|
-| 27 | AL | 397 | 78.59% | 589.05 | 245.84 | 21.32% |
-| 26 | MA | 717 | 82.57% | 517.75 | 267.77 | 19.94% |
-| 25 | SE | 335 | 84.78% | 516.47 | 405.38 | 18.86% |
-| 24 | PI | 476 | 86.13% | 466.97 | 337.52 | 16.14% |
-| 23 | CE | 1,279 | 86.24% | 510.40 | 380.84 | 17.12% |
-| 20 | **RJ** | **12,350** | **87.89%** | 367.43 | 341.34 | 18.33% |
+| 21 | AL | 397 | 78.59% | 589.05 | 245.84 | 21.32% |
+| 20 | MA | 717 | 82.57% | 517.75 | 267.77 | 19.94% |
+| 19 | SE | 335 | 84.78% | 516.47 | 405.38 | 18.86% |
+| 18 | PI | 476 | 86.13% | 466.97 | 337.52 | 16.14% |
+| 17 | CE | 1,279 | 86.24% | 510.40 | 380.84 | 17.12% |
+| 15 | **RJ** | **12,350** | **87.89%** | 367.43 | 341.34 | 18.33% |
 
-Strongest: PR 95.96% (4,923), SP 95.51% (40,494), MG 95.43% (11,354), DF 94.33% (2,080), RS 93.92%
-(5,344). AM, RO, AP and AC post higher rates still (96.25–97.24%) but on 67–243 orders each; they clear the
-n = 30 bar and are ranked, but they are not a stable basis for a target.
+Strongest of the 21 ranked states: PR 95.96% (4,923), SP 95.51% (40,494), MG 95.43% (11,354), DF 94.33%
+(2,080), MT 94.02% (886). AM, RO, AP and AC post higher rates still (96.25–97.24%) but on 67–243 orders
+each, below the 300 floor; they appear in the output with their n and carry no rank, because a rate on 67
+orders is not a basis for a target.
 
-**Interpretation.** The spread across states is **18.65 points**, from 78.59% to 97.24% — far wider than
-the 6.77% national breach rate suggests. The weak states are all in the North and Northeast and share a
+**Interpretation.** The spread across the 21 ranked states is **17.37 points**, from AL at 78.59% to PR
+at 95.96% — far wider than the 6.77% national breach rate suggests. Including the six states below the
+ranking floor would widen it to 18.65 points, topped by AM at 97.24% on 145 orders; that 1.28-point
+difference is itself the argument for the floor, since the wider figure is carried by cells too thin to
+rank. The weak states are all in the North and Northeast and share a
 signature: long average delivery times (466–589 h against SP's 210.27 h) and large misses when they miss.
 But the ranking alone points at the wrong target. **RJ sits 20th of 27 yet contributes 22.88% of every late
 order in the country** — the largest single share, on 12.8% of eligible volume — because it is the second
@@ -73,7 +81,7 @@ different directions and need different responses.
 
 **Limitation.** State is the customer's delivery state. It conflates distance, road and courier
 infrastructure, and the local seller mix, none of which are separable here. The four highest-rate states
-rest on 67–243 orders, which is enough to rank but not enough to plan against.
+rest on 67–243 orders and fall below the ranking floor, so they are reported but not ranked.
 
 **Recommended action.** Treat AL, MA, SE, PI and CE as a rate problem and RJ as a volume problem: the same
 one-point improvement is worth roughly 15× more orders in RJ than in SE. Set absolute delivery-time targets
@@ -222,8 +230,9 @@ Low-review rate rises monotonically from 8.95% to 78.79%, with the sharpest jump
 late" and "2–7 days late" — 15.23% to 55.05%. Beyond about a week the curve flattens: once an order is very
 late, being later still adds little.
 
-Geographically the two measures move together. AL has both the worst on-time rate (78.59%) and the worst
-low-review rate (21.32%); MA is second on both (82.57%, 19.94%) *(`q06_review_analysis_3.csv`)*.
+Geographically the two measures move together. Among the 21 ranked states AL has both the worst on-time
+rate (78.59%) and the worst low-review rate (21.32%), and MA is second on both (82.57%, 19.94%); no state
+below the ranking floor beats AL on either *(`q06_review_analysis_3.csv`)*.
 
 **Interpretation.** Delivery timing is the dominant observable correlate of review score. The flattening
 past a week suggests the damage is done early, which argues for protecting the 2–7 day band — where the
@@ -277,8 +286,9 @@ not something the dataset states.
 **Pattern.** Orders where the seller and customer are in different states are late **8.05%** of the time
 against **4.51%** for same-state orders, and take **363.57 h** against **190.67 h** — with transit alone
 running 284.99 h against 115.35 h *(`q03_geography_analysis_4.csv`)*. Cross-state orders are **64.04%** of
-eligible volume. **All 20 of the worst-performing seller→customer routes are cross-state**, led by PR→AL
-at 30.56% late (n = 36) and SP→AL at 23.92% (n = 255) *(`q03_geography_analysis_3.csv`)*.
+eligible volume. Only 38 of the 124 routes clear the 300-order ranking floor, and **the 24 worst of those
+are all cross-state** before a same-state route appears — led by SP→MA at 18.90% late (n = 492) and SP→PI
+at 16.41% (n = 329) *(`q03_geography_analysis_3.csv`)*.
 
 **Affected orders.** 61,780 cross-state eligible orders carrying 4,971 late deliveries — **76.08% of all
 lateness**.
@@ -294,7 +304,8 @@ the cross-state rate to the same-state rate roughly halves its late rate on obse
 
 **Limitation / alternative explanation.** Same-state orders are disproportionately SP-to-SP, so the
 "same-state" number partly measures SP's dense infrastructure rather than proximity as such. The comparison
-does not isolate distance from the quality of the lanes, and the worst route cells rest on 35–54 orders.
+does not isolate distance from the quality of the lanes, and 86 of the 124 route cells fall below the
+ranking floor, so the route-level picture is thinner than the same-state against cross-state split.
 
 ### Insight 3 — The customer-outcome signal is dose-responsive, which is rare and useful
 

@@ -81,7 +81,8 @@ SELECT Seller_State,
        ROUND(AVG(CASE WHEN Is_Sla_Eligible = 1 THEN Actual_Delivery_Hours END), 2) AS Avg_Delivery_Hours,
        ROUND(AVG(CASE WHEN Is_Sla_Eligible = 1 THEN Handoff_Hours END), 2)         AS Avg_Handoff_Hours,
        ROUND(100.0 * SUM(Is_Sla_Eligible) / SUM(SUM(Is_Sla_Eligible)) OVER (), 2)  AS Share_Of_Eligible_Pct,
-       CASE WHEN SUM(Is_Sla_Eligible) < 30 THEN 'n < 30 - not ranked' ELSE '' END  AS Sample_Note
+       -- Geography cell, so it carries the project-wide 300 floor rather than the seller floor of 30.
+       CASE WHEN SUM(Is_Sla_Eligible) < 300 THEN 'n < 300 - not ranked' ELSE '' END AS Sample_Note
 FROM seller_orders
 GROUP BY Seller_State
 HAVING SUM(Is_Sla_Eligible) > 0
