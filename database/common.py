@@ -17,10 +17,6 @@ DATE_FMT = "%Y-%m-%d %H:%M:%S"
 # promised day is on time. Every on-time test therefore compares calendar dates, never timestamps -
 # the timestamp form moves the rate by 1.34 points. Durations below stay on the timestamp basis.
 DELIVERED_STATUS = "delivered"
-ON_TIME_RULE = "DATE(Delivered_Ts) <= DATE(Estimated_Ts)"
-SLA_ELIGIBLE_RULE = (
-    f"Order_Status = '{DELIVERED_STATUS}' AND Delivered_Ts IS NOT NULL AND Estimated_Ts IS NOT NULL"
-)
 
 APPROVAL_BUCKETS = ["0-1h", "1-6h", "6-24h", ">24h"]
 UNKNOWN_BUCKET = "Unknown"

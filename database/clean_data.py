@@ -222,7 +222,6 @@ def recount():
     items = source("olist_order_items_dataset", usecols=["order_id", "seller_id"])
     payments = source("olist_order_payments_dataset", usecols=["order_id", "payment_sequential"])
     reviews = source("olist_order_reviews_dataset", usecols=["order_id"])
-    geo = source("olist_geolocation_dataset")
     ids = set(orders["Order_ID"])
     delivered, approved = orders["Delivered_Ts"], orders["Approved_Ts"]
     return {

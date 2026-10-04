@@ -2,7 +2,8 @@
 
 A file may hold several statements. All of them run in order; the ones that return rows are exported as
 qNN_<name>.csv, with _2, _3 suffixes when a single file returns more than one result set. Once a run has
-populated fact_orders, the table is also exported whole to data/processed/fact_orders.csv.
+populated fact_orders, the table is also exported whole to data/processed/fact_orders.csv, and the
+data-quality file is replayed so its mart checks run against the filled table rather than an empty one.
 """
 
 import sqlite3
@@ -12,6 +13,7 @@ import pandas as pd
 from common import DATA_PROCESSED, DB_PATH, QUERY_OUTPUTS, SQL_DIR, connect, log, read_text
 
 FACT_EXPORT = DATA_PROCESSED / "fact_orders.csv"
+DQ_FILE = SQL_DIR / "01_data_quality.sql"
 
 
 def statements(text):
@@ -59,12 +61,18 @@ def main():
     if not DB_PATH.exists():
         raise FileNotFoundError(f"{DB_PATH} is missing; run database/load_data.py first")
     QUERY_OUTPUTS.mkdir(parents=True, exist_ok=True)
+    if not DQ_FILE.exists():
+        raise FileNotFoundError(f"{DQ_FILE} is missing; the data-quality gate cannot run")
     con = connect()
     try:
         for path in sorted(SQL_DIR.glob("*.sql")):
             for name, rows in run_file(con, path):
                 log(f"{path.name} -> {name} ({rows:,} rows)")
         export_fact(con)
+        # load_data drops fact_orders, and 01 runs before 07 fills it, so on a cold rebuild every
+        # fact_orders check in 01 passes against an empty table. Replay it now that the mart exists.
+        for name, rows in run_file(con, DQ_FILE):
+            log(f"{DQ_FILE.name} -> {name} ({rows:,} rows, rechecked against the filled mart)")
     finally:
         con.close()
 

@@ -2,7 +2,6 @@
 
 import base64
 import os
-import sys
 import urllib.error
 import urllib.request
 import zipfile
@@ -85,5 +84,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, str(ROOT / "database"))
     main()

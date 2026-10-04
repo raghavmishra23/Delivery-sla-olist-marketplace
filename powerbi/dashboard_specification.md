@@ -107,7 +107,7 @@ This is the most quotable visual in the report: **53.8% of late orders score one
 
 **3. State × region matrix** — rows `Region` then `State_Name`, values `On-Time Delivery Rate` and `SLA Eligible Orders`. Background conditional formatting on the **ranked** measure: `< 0.88` → `#DC2626`; `0.88–0.93` → `#EAECE8`; `≥ 0.93` → `#15803D`. Blank → no fill. This is where every state appears, including the six below the ranking bar, with their n.
 
-**4. Seller late rate** — bar on `Primary_Seller_Id` filtered to sellers with ≥200 eligible orders (84 of them), `SLA Breach Rate` descending, n shown. Expect a range of **0.89% to 19.07%**, median 6.75%. Subtitle must state the 200-order filter.
+**4. Seller late rate** — bar on `Primary_Seller_Id` filtered to sellers with ≥200 eligible orders (84 of them), `SLA Breach Rate` descending, n shown. Expect a range of **0.89% to 19.07%**, median 6.76%. Subtitle must state the 200-order filter.
 
 **5. Order volume by month** — column chart, `Total Orders` by `Month_Key`, bars `#EAECE8`. This exists so volume is visible *without* overlaying it on the on-time line.
 

@@ -22,4 +22,4 @@ Produced by `database/reconcile.py`.
 | SQL | Read from the committed query outputs in `data/processed/query_outputs/`, so a stale export fails the check. |
 | pandas | Recomputed directly from `data/processed/fact_orders.csv`. |
 | Excel | Recomputed from the `Clean_Data` cells the workbook's formulas read. openpyxl cannot evaluate formulas, so this verifies the workbook's inputs rather than Excel's own arithmetic. |
-| Dashboard | Decoded from the packed payload the browser loads. Delivery hours are stored rounded there, so it is compared on counts and rates only. |
+| Dashboard | Decoded from the packed payload the browser loads. Delivery hours are stored rounded there, so the hour KPIs are compared on a wider tolerance rather than exempted. |

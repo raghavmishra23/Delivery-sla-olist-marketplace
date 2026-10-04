@@ -87,8 +87,12 @@ def dict_column(series):
 
 
 def wide_column(series):
+    """Null and negative both encode as 0; anything past the ceiling raises rather than saturating."""
     v = pd.to_numeric(series, errors="coerce").round()
-    out = np.where(v.isna() | (v < 0), 0, np.clip(v.fillna(0), 0, MAX2 - 1) + 1)
+    over = v[v > MAX2 - 1]
+    if not over.empty:
+        raise SystemExit(f"{len(over)} value(s) above the {MAX2 - 1} h ceiling, highest {over.max():.0f}")
+    out = np.where(v.isna() | (v < 0), 0, v.fillna(0) + 1)
     return enc2(out.astype(np.int64))
 
 

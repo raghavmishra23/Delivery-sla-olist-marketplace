@@ -1,7 +1,6 @@
 """Recomputes the headline KPIs from every tool in the project and asserts they agree."""
 
 import json
-import sys
 
 import pandas as pd
 from openpyxl import load_workbook
@@ -174,7 +173,7 @@ def main():
         "| SQL | Read from the committed query outputs in `data/processed/query_outputs/`, so a stale export fails the check. |\n"
         "| pandas | Recomputed directly from `data/processed/fact_orders.csv`. |\n"
         "| Excel | Recomputed from the `Clean_Data` cells the workbook's formulas read. openpyxl cannot evaluate formulas, so this verifies the workbook's inputs rather than Excel's own arithmetic. |\n"
-        "| Dashboard | Decoded from the packed payload the browser loads. Delivery hours are stored rounded there, so it is compared on counts and rates only. |\n",
+        "| Dashboard | Decoded from the packed payload the browser loads. Delivery hours are stored rounded there, so the hour KPIs are compared on a wider tolerance rather than exempted. |\n",
         encoding="utf-8", newline="\n")
 
     if failures:
@@ -185,5 +184,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.path.insert(0, str(ROOT / "database"))
     main()

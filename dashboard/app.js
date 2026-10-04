@@ -153,7 +153,9 @@ function reviewStats(idx) {
 function delayBucket(i) {
   if (!D.sla[i]) return -1;
   if (D.onTime[i]) return 0;
-  const d = hrs(D.actual, i) - hrs(D.promised, i);
+  const a = hrs(D.actual, i), p = hrs(D.promised, i);
+  if (a == null || p == null) return -1;
+  const d = a - p;
   if (d <= 72) return 1;
   if (d <= 168) return 2;
   return 3;
@@ -952,8 +954,12 @@ function renderGeo(idx) {
     metric: otdMetric, sort: (a, b) => b.value - a.value, col: D.region, key: "region",
     cls: r => (r.value >= 93 ? "bar-good" : r.value >= 90 ? "bar-mute" : "bar-bad"),
   });
+  const rankedRegions = regions.filter(r => r.rankable).length;
   document.getElementById("s-region").textContent = regions.length
-    ? `${regions.length} regions · all clear the ${MIN_RANK}-order bar for ranking`
+    ? `${regions.length === 1 ? "1 region" : `${regions.length} regions`} · `
+      + (rankedRegions === regions.length
+        ? `all clear the ${MIN_RANK}-order bar for ranking`
+        : `${intText(regions.length - rankedRegions)} under ${MIN_RANK} eligible orders, listed but not ranked`)
     : "";
   rankChart(document.getElementById("c-region"), regions,
     { fmt: v => v.toFixed(1) + "%", lo: 80, hi: 100, labelW: 132, rowH: 26, gap: 12 });

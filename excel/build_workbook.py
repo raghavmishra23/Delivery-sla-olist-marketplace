@@ -298,7 +298,7 @@ def write_kpis(wb):
     for r in range(3, 20):
         for c in range(1, 10):
             ws.cell(row=r, column=c).fill = PatternFill("solid", fgColor=CANVAS)
-    elig = f'TEXT(F5,"#,##0")&" SLA-eligible"'
+    elig = 'TEXT(F5,"#,##0")&" SLA-eligible"'
     cards = [
         [
             ("B", "Total orders", f"=ROWS({col('Order_ID')})", FMT_INT, "all statuses"),

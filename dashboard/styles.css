@@ -14,6 +14,9 @@
   --hero-bg: var(--surface-2);
   --hero-ink: var(--ink);
   --hero-border: var(--hero-bg);
+  /* The selected tab stays an inverted pill in both themes; it is the only navigation cue. */
+  --tab-active-bg: var(--ink);
+  --tab-active-ink: var(--bg);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 28px rgba(0, 0, 0, 0.26);
   --shadow-lift: 0 2px 5px rgba(0, 0, 0, 0.5), 0 16px 38px rgba(0, 0, 0, 0.34);
   --sheen: rgba(255, 255, 255, 0.06);
@@ -36,7 +39,9 @@
   --radius: 16px;
   --radius-sm: 9px;
   --quick: 140ms;
+  --slow: 190ms;
   --ease: cubic-bezier(0.2, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --font: "Segoe UI", "Segoe UI Variable Text", system-ui, Tahoma, sans-serif;
 }
 
@@ -58,6 +63,8 @@
   --hero-bg: var(--surface);
   --hero-ink: var(--ink);
   --hero-border: var(--border);
+  --tab-active-bg: var(--ink);
+  --tab-active-ink: var(--surface);
   --shadow: 0 1px 2px rgba(21, 23, 26, 0.04), 0 6px 18px rgba(21, 23, 26, 0.05);
   --shadow-lift: 0 2px 5px rgba(21, 23, 26, 0.06), 0 14px 32px rgba(21, 23, 26, 0.09);
   --sheen: rgba(21, 23, 26, 0.05);
@@ -110,11 +117,22 @@ h1 span { color: var(--label); font-weight: 400; }
   border-radius: 7px;
   padding: 7px 15px;
   cursor: pointer;
-  transition: color var(--quick) var(--ease), background var(--quick) var(--ease);
+  transition: color var(--quick) var(--ease-out), background var(--quick) var(--ease-out),
+    box-shadow var(--quick) var(--ease-out);
 }
 
-.tab:hover { color: var(--ink); }
-.tab[aria-selected="true"] { background: var(--hero-bg); color: var(--hero-ink); font-weight: 600; }
+/* Hover is a faint wash; selected is the inverted pill. The two must not look alike. */
+.tab:hover:not([aria-selected="true"]) {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+.tab[aria-selected="true"] {
+  background: var(--tab-active-bg);
+  color: var(--tab-active-ink);
+  font-weight: 650;
+  box-shadow: var(--shadow);
+}
 
 .toggle {
   display: inline-flex;
@@ -135,7 +153,10 @@ h1 span { color: var(--label); font-weight: 400; }
   border-radius: 999px;
   background: var(--surface-2);
   border: 1px solid var(--border);
+  transition: border-color var(--quick) var(--ease-out);
 }
+
+.toggle:hover .toggle-track { border-color: var(--label); }
 
 .toggle-thumb {
   position: absolute;
@@ -148,7 +169,7 @@ h1 span { color: var(--label); font-weight: 400; }
   box-shadow: var(--shadow);
   display: grid;
   place-items: center;
-  transition: transform var(--quick) var(--ease);
+  transition: transform var(--slow) var(--ease-out);
 }
 
 :root[data-theme="light"] .toggle-thumb { transform: translateX(20px); }
@@ -177,11 +198,16 @@ select, #reset {
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   padding: 7px 10px;
-  transition: border-color var(--quick) var(--ease);
+  min-height: 44px;
+  transition: border-color var(--quick) var(--ease-out), background var(--quick) var(--ease-out);
 }
 
-select { min-width: 140px; }
-select:hover, #reset:hover { border-color: var(--label); }
+/* Matches .ms-btn so the month pickers and the multi-selects line up in the same row. */
+select { min-width: 170px; }
+select:hover, #reset:hover {
+  border-color: var(--label);
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface-2));
+}
 #reset { cursor: pointer; padding: 7px var(--s4); }
 
 :is(select, button):focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
@@ -204,10 +230,13 @@ select:hover, #reset:hover { border-color: var(--label); }
   border-radius: var(--radius-sm);
   padding: 7px 10px;
   cursor: pointer;
-  transition: border-color var(--quick) var(--ease);
+  transition: border-color var(--quick) var(--ease-out), background var(--quick) var(--ease-out);
 }
 
-.ms-btn:hover { border-color: var(--label); }
+.ms-btn:hover {
+  border-color: var(--label);
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface-2));
+}
 .ms-btn.on { border-color: var(--good); color: var(--ink); font-weight: 600; }
 .ms-sum { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ms-caret { width: 13px; height: 13px; fill: none; stroke: var(--label); stroke-width: 1.6; flex: none; }
@@ -251,6 +280,7 @@ select:hover, #reset:hover { border-color: var(--label); }
   cursor: pointer;
 }
 
+.ms-act { transition: color var(--quick) var(--ease-out), background var(--quick) var(--ease-out); }
 .ms-act:hover { color: var(--ink); background: var(--surface-2); }
 .ms-list { max-height: 280px; overflow-y: auto; }
 
@@ -265,6 +295,7 @@ select:hover, #reset:hover { border-color: var(--label); }
   font-size: var(--fs-body);
 }
 
+.ms-opt { transition: background var(--quick) var(--ease-out); }
 .ms-opt:hover { background: var(--surface-2); }
 .ms-opt[hidden] { display: none; }
 .ms-opt input { width: 16px; height: 16px; accent-color: var(--good); flex: none; cursor: pointer; }
@@ -290,10 +321,11 @@ main { padding: var(--s5) var(--s6) var(--s6); }
   padding: 20px 22px;
   min-width: 0;
   box-shadow: var(--shadow);
-  transition: box-shadow var(--quick) var(--ease), border-color var(--quick) var(--ease);
+  transition: box-shadow var(--slow) var(--ease-out), border-color var(--slow) var(--ease-out);
 }
 
-.t:hover { box-shadow: var(--shadow-lift); }
+/* No transform here: .enter keeps animation-fill-mode both, which would win over a hover transform. */
+.t:hover { box-shadow: var(--shadow-lift); border-color: var(--label); }
 .span2 { grid-column: span 2; }
 .span4 { grid-column: span 4; }
 
@@ -357,7 +389,7 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 .flag-text { font-size: 10.5px; fill: var(--bad); font-weight: 700; }
 .caption-text { font-size: 10.5px; fill: var(--muted); }
 
-.bar { transition: opacity var(--quick) var(--ease); }
+.bar { transition: opacity var(--quick) var(--ease-out); }
 .plot:hover .bar { opacity: 0.5; }
 .plot:hover .bar:hover { opacity: 1; }
 
@@ -420,7 +452,7 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 .busy .plot::after { opacity: 0.6; transition: opacity var(--quick) var(--ease) 120ms; }
 .busy .plot { cursor: progress; }
 
-.enter { animation: rise 220ms var(--ease) both; }
+.enter { animation: rise 200ms var(--ease-out) both; }
 
 @keyframes rise {
   from { opacity: 0; transform: translateY(5px); }
@@ -444,8 +476,10 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-delay: 0ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
   }
   .skel::after { display: none; }
 }
