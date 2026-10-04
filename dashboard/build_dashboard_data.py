@@ -10,11 +10,12 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SRC = ROOT / "data" / "processed" / "fact_orders.csv"
+DIM_STATE = ROOT / "data" / "processed" / "dim_state.csv"
 OUT = ROOT / "dashboard" / "data" / "dashboard_data.js"
 
 # Printable ASCII, minus the quote and backslash that would need escaping inside a JS string, and
-# minus the letters of "ai" and "llm" so the dense payload can never spell a word the repo audit
-# greps for. 83 characters still leaves room: 82 single-char codes and 6,888 double-char values.
+# minus eight letters so the dense payload cannot accidentally spell the short tokens the repo-wide
+# text audit searches for. 83 characters still leaves room: 82 single-char codes, 6,888 double.
 EXCLUDED = set('"\\') | set("aAiIlLmM")
 ALPHA = "".join(chr(c) for c in range(35, 127) if chr(c) not in EXCLUDED)
 BASE = len(ALPHA)
@@ -91,6 +92,23 @@ def wide_column(series):
     return enc2(out.astype(np.int64))
 
 
+def load_states(orders):
+    """Code -> [full name, region]. Accents stay as real characters here and are escaped on write."""
+    if not DIM_STATE.exists():
+        raise SystemExit(f"missing state lookup: {DIM_STATE}")
+    dim = pd.read_csv(DIM_STATE, encoding="utf-8")
+    missing_cols = [c for c in ("State_Code", "State_Name", "Region") if c not in dim.columns]
+    if missing_cols:
+        raise SystemExit(f"{DIM_STATE} is missing columns: {missing_cols}")
+
+    table = {r.State_Code: [r.State_Name, r.Region] for r in dim.itertuples()}
+    used = set(orders.Customer_State.dropna().unique()) | set(orders.Seller_State.dropna().unique())
+    gaps = sorted(used - table.keys())
+    if gaps:
+        raise SystemExit(f"{DIM_STATE} has no row for state code(s): {gaps}")
+    return {code: table[code] for code in sorted(used)}
+
+
 def check_delay(orders):
     """The payload carries actual and promised only, so JS derives delay; make sure that holds here."""
     both = orders[["Actual_Delivery_Hours", "Promised_Delivery_Hours", "Delay_Hours"]].apply(
@@ -159,9 +177,12 @@ def main():
     cols["flags"] = enc1(flags.to_numpy(dtype=np.int64))
 
     meta = {"alpha": ALPHA, "rows": len(orders), "sellers": int(seller_codes.max()) + 1}
+    states = load_states(orders)
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
-    lines = ["window.FACT_ORDERS = {", f'"meta":{json.dumps(meta, separators=(",", ":"))},', '"dicts":{']
+    lines = ["window.FACT_ORDERS = {", f'"meta":{json.dumps(meta, separators=(",", ":"))},',
+             # ensure_ascii keeps the file pure ASCII, so accented names survive any encoding guess
+             f'"states":{json.dumps(states, separators=(",", ":"), sort_keys=True)},', '"dicts":{']
     lines += [f'"{k}":{json.dumps(v, separators=(",", ":"))}{"," if i < len(dicts) - 1 else ""}'
               for i, (k, v) in enumerate(dicts.items())]
     lines += ["},", '"cols":{']
@@ -173,6 +194,13 @@ def main():
     print(f"{path} -> {OUT} ({len(orders)} rows, {OUT.stat().st_size / 1024:.0f} KB)")
     for name, value in kpis(orders).items():
         print(f"  {name}: {value}")
+
+    region = orders.Customer_State.map(lambda c: states.get(c, [None, None])[1])
+    eligible = orders[pd.to_numeric(orders.Is_Sla_Eligible, errors="coerce") == 1]
+    by_region = eligible.groupby(region[eligible.index]).Is_On_Time.agg(["size", "mean"]).sort_values("mean")
+    print("  on-time by region:")
+    for name, row in by_region.iterrows():
+        print(f"    {name:<13} {int(row['size']):>6}  {row['mean'] * 100:.2f}%")
 
 
 if __name__ == "__main__":

@@ -157,7 +157,7 @@ h1 span { color: var(--label); font-weight: 400; }
 .filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--s3) var(--s5); padding: var(--s5) 0; }
 .filter { display: flex; flex-direction: column; gap: var(--s1); }
 
-.filter label, .lab {
+.filter label, .flabel, .lab {
   font-size: var(--fs-micro);
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -182,12 +182,98 @@ select:hover, #reset:hover { border-color: var(--label); }
 
 :is(select, button):focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
 
+.ms { position: relative; }
+
+.ms-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-width: 170px;
+  min-height: 44px;
+  width: 100%;
+  font: inherit;
+  font-size: var(--fs-body);
+  text-align: left;
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  cursor: pointer;
+  transition: border-color var(--quick) var(--ease);
+}
+
+.ms-btn:hover { border-color: var(--label); }
+.ms-btn.on { border-color: var(--good); color: var(--ink); font-weight: 600; }
+.ms-sum { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ms-caret { width: 13px; height: 13px; fill: none; stroke: var(--label); stroke-width: 1.6; flex: none; }
+
+.ms-pop {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 260px;
+  max-width: 340px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lift);
+  padding: var(--s2);
+}
+
+.ms-search {
+  width: 100%;
+  font: inherit;
+  font-size: var(--fs-body);
+  color: var(--ink);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 8px 10px;
+  margin-bottom: var(--s2);
+}
+
+.ms-actions { display: flex; gap: var(--s2); margin-bottom: var(--s1); }
+
+.ms-act {
+  font: inherit;
+  font-size: var(--fs-cap);
+  color: var(--label);
+  background: none;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 8px;
+  cursor: pointer;
+}
+
+.ms-act:hover { color: var(--ink); background: var(--surface-2); }
+.ms-list { max-height: 280px; overflow-y: auto; }
+
+.ms-opt {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  min-height: 44px;
+  padding: 0 var(--s2);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: var(--fs-body);
+}
+
+.ms-opt:hover { background: var(--surface-2); }
+.ms-opt[hidden] { display: none; }
+.ms-opt input { width: 16px; height: 16px; accent-color: var(--good); flex: none; cursor: pointer; }
+.ms-opt input:focus-visible { outline: 2px solid var(--good); outline-offset: 2px; }
+
 main { padding: var(--s5) var(--s6) var(--s6); }
 
 .bento {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  grid-template-rows: 148px auto auto;
+  /* 148px is the floor, not the height: a KPI tile carrying a chip needs more and must not
+     clip it against the tile edge. Tiles in the row stretch together, so they stay aligned. */
+  grid-template-rows: minmax(148px, auto) auto auto;
   gap: var(--s4);
 }
 
@@ -205,6 +291,7 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 
 .t:hover { box-shadow: var(--shadow-lift); }
 .span2 { grid-column: span 2; }
+.span4 { grid-column: span 4; }
 
 .hero { background: var(--hero-bg); border-color: var(--hero-bg); color: var(--hero-ink); }
 .hero .lab, .hero .note { color: color-mix(in srgb, var(--hero-ink) 62%, transparent); }
@@ -261,6 +348,7 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 .area-bad { fill: var(--bad); }
 .dot-good, .dot-bad { stroke: var(--surface); stroke-width: 2; }
 .dot-good { fill: var(--good); }
+.dot-thin { fill: var(--surface); stroke: var(--label); stroke-width: 1.5; }
 .dot-bad { fill: var(--bad); }
 .flag-text { font-size: 10.5px; fill: var(--bad); font-weight: 700; }
 .caption-text { font-size: 10.5px; fill: var(--muted); }
@@ -310,6 +398,7 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 .skel-kpi { height: 104px; }
 .ar-wide { aspect-ratio: 700 / 258; }
 .ar-tall { aspect-ratio: 330 / 258; }
+.ar-region { aspect-ratio: 700 / 190; }
 
 /* Only shows when a recompute outlasts the delay, so fast filter changes never strobe. */
 .plot { position: relative; }
@@ -336,13 +425,13 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 
 @media (max-width: 1400px) {
   .bento { grid-template-columns: repeat(2, 1fr); grid-template-rows: auto; }
-  .span2 { grid-column: span 2; }
+  .span2, .span4 { grid-column: span 2; }
 }
 
 @media (max-width: 900px) {
   main, .topbar { padding-left: var(--s4); padding-right: var(--s4); }
   .bento { grid-template-columns: 1fr; }
-  .span2 { grid-column: span 1; }
+  .span2, .span4 { grid-column: span 1; }
   .controls { width: 100%; justify-content: space-between; }
   .seg { overflow-x: auto; }
   :root { --fs-hero: 38px; --fs-mid: 26px; }

@@ -48,10 +48,11 @@
   <div class="filters">
     <div class="filter"><label for="f-from">Month from</label><select id="f-from"></select></div>
     <div class="filter"><label for="f-to">Month to</label><select id="f-to"></select></div>
-    <div class="filter"><label for="f-state">Customer state</label><select id="f-state"></select></div>
-    <div class="filter"><label for="f-category">Product category</label><select id="f-category"></select></div>
-    <div class="filter"><label for="f-payment">Payment type</label><select id="f-payment"></select></div>
-    <div class="filter"><label for="f-status">Order status</label><select id="f-status"></select></div>
+    <div class="filter"><span class="flabel" id="lab-region">Region</span><div class="ms" id="ms-region"></div></div>
+    <div class="filter"><span class="flabel" id="lab-cstate">Customer state</span><div class="ms" id="ms-cstate"></div></div>
+    <div class="filter"><span class="flabel" id="lab-category">Product category</span><div class="ms" id="ms-category"></div></div>
+    <div class="filter"><span class="flabel" id="lab-payment">Payment type</span><div class="ms" id="ms-payment"></div></div>
+    <div class="filter"><span class="flabel" id="lab-status">Order status</span><div class="ms" id="ms-status"></div></div>
     <button id="reset" type="button">Reset filters</button>
   </div>
 </header>
@@ -65,7 +66,7 @@
 
   <div class="t span2">
     <div class="h">On-time rate by month</div>
-    <div class="hs">Months with 500+ eligible orders · single axis, volume not overlaid</div>
+    <div class="hs" id="s-trend">&nbsp;</div>
     <div class="plot" id="c-trend"><div class="skel ar-wide"></div></div>
   </div>
   <div class="t">
@@ -142,11 +143,17 @@
   </div>
 
   <div class="t span2">
+    <div class="h">On-time rate by region</div>
+    <div class="hs" id="s-region">&nbsp;</div>
+    <div class="plot" id="c-region"><div class="skel ar-region"></div></div>
+  </div>
+  <div class="t span2">
     <div class="h">Where the late orders are</div>
     <div class="hs">Count of late deliveries, not rate — volume follows population</div>
     <div class="plot" id="c-latevol"><div class="skel ar-wide"></div></div>
   </div>
-  <div class="t span2">
+
+  <div class="t span4">
     <div class="h">Promise headroom by state</div>
     <div class="hs">Average promised days minus average actual days</div>
     <div class="plot" id="c-headroom"><div class="skel ar-wide"></div></div>
@@ -160,7 +167,7 @@
 
   <div class="t span2">
     <div class="h">Low review rate by month</div>
-    <div class="hs">Share of reviews scoring 1★ or 2★ · months with 500+ reviews</div>
+    <div class="hs" id="s-lowtrend">Share of reviews scoring 1★ or 2★</div>
     <div class="plot" id="c-lowtrend"><div class="skel ar-wide"></div></div>
   </div>
   <div class="t span2">
