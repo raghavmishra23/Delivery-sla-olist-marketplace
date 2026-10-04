@@ -177,6 +177,19 @@ readable without a Kaggle account, and they inherit the same licence terms.
 - **Two years ending October 2018**, thin before 2017 and partial at both ends, so no year-over-year
   comparison is possible for the February–March window that most needs one.
 
+## Screenshots
+
+The dashboard, dark theme — Overview tab, no filters applied:
+
+![Dashboard, dark theme](screenshots/dashboard-overview-dark.png)
+
+The same view in light theme:
+
+![Dashboard, light theme](screenshots/dashboard-overview-light.png)
+
+Four tabs — Overview, Sellers, Geography, Reviews — each with multi-select filters, per-card chart
+and table views, and filter state carried in the URL so a cut can be shared as a link.
+
 ## Documentation
 
 | Document | For |
