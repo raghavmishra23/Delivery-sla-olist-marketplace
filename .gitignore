@@ -19,3 +19,4 @@ data/processed/customers.csv
 data/processed/sellers.csv
 data/processed/products.csv
 data/processed/geolocation.csv
+powerbi/*.pbix

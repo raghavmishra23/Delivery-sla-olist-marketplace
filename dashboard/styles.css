@@ -13,6 +13,7 @@
   --hero-good: var(--good);
   --hero-bg: var(--surface-2);
   --hero-ink: var(--ink);
+  --hero-border: var(--hero-bg);
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.45), 0 10px 28px rgba(0, 0, 0, 0.26);
   --shadow-lift: 0 2px 5px rgba(0, 0, 0, 0.5), 0 16px 38px rgba(0, 0, 0, 0.34);
   --sheen: rgba(255, 255, 255, 0.06);
@@ -51,9 +52,12 @@
   --bad: #DC2626;
 
   --track: #EAECE8;
-  --hero-good: #4ADE80;
-  --hero-bg: var(--ink);
-  --hero-ink: var(--surface);
+  /* On white the hero keeps the surface of every other tile; the 46px number and the accent carry
+     the emphasis. The dark-theme green reads at 1.7:1 here, well under AA, so --good is used. */
+  --hero-good: var(--good);
+  --hero-bg: var(--surface);
+  --hero-ink: var(--ink);
+  --hero-border: var(--border);
   --shadow: 0 1px 2px rgba(21, 23, 26, 0.04), 0 6px 18px rgba(21, 23, 26, 0.05);
   --shadow-lift: 0 2px 5px rgba(21, 23, 26, 0.06), 0 14px 32px rgba(21, 23, 26, 0.09);
   --sheen: rgba(21, 23, 26, 0.05);
@@ -293,7 +297,7 @@ main { padding: var(--s5) var(--s6) var(--s6); }
 .span2 { grid-column: span 2; }
 .span4 { grid-column: span 4; }
 
-.hero { background: var(--hero-bg); border-color: var(--hero-bg); color: var(--hero-ink); }
+.hero { background: var(--hero-bg); border-color: var(--hero-border); color: var(--hero-ink); }
 .hero .lab, .hero .note { color: color-mix(in srgb, var(--hero-ink) 62%, transparent); }
 
 .big { font-size: var(--fs-hero); font-weight: 700; letter-spacing: -1.6px; margin-top: 10px; line-height: 1; }
